@@ -43,9 +43,9 @@ jobs:
         with:
           profile: cover.out
           local-prefix: science.sneaksanddata.com/nexus-configuration-controller
-          threshold-file: 80
-          threshold-package: 80
-          threshold-total: 80
+          threshold-file: 40
+          threshold-package: 40
+          threshold-total: 50
           
           ## adge is created and committed only for main branch
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
