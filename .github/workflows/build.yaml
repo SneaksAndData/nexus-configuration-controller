@@ -44,3 +44,9 @@ jobs:
           threshold-file: 80
           threshold-package: 80
           threshold-total: 80
+          
+          ## adge is created and committed only for main branch
+          git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
+          ## name of branch where badges are stored
+          ## ideally this should be orphan branch (see below how to create this branch)
+          git-branch: badges 
