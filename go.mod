@@ -9,7 +9,6 @@ require (
 	k8s.io/client-go v0.31.1
 	k8s.io/code-generator v0.31.1
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/sample-controller v0.31.1
 )
 
 require (
