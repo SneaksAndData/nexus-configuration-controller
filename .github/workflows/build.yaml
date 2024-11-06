@@ -46,13 +46,20 @@ jobs:
         
       - name: Visualise Coverage
         run: go tool cover -html=cover.out -o=cover.html
-
-      - name: Post Coverage
-        uses: peter-evans/create-or-update-comment@v4
+        
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v4
         with:
-          issue-number: ${{ github.event.number }}
-          body-path: 'cover.html'
-      
+          name: coverage
+          path: cover.html
+          retention-days: 1        
+
+#      - name: Post Coverage
+#        uses: peter-evans/create-or-update-comment@v4
+#        with:
+#          issue-number: ${{ github.event.number }}
+#          body-path: 'cover.html'
+#      
       - name: Check Coverage
         uses: vladopajic/go-test-coverage@v2
         with:
