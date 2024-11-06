@@ -1,0 +1,8 @@
+apiVersion: v1
+appVersion: 0.0.0
+description: Multi-cluster configuration manager for Nexus
+maintainers:
+  - email: esdsupport@ecco.com
+    name: ECCO Data & AI
+name: nexus-configuration-controller
+version: 0.0.0
