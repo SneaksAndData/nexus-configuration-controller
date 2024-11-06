@@ -10,7 +10,7 @@ RUN go mod download && go mod vendor
 
 COPY *.go ./
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v ./... -o /ncc
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v ./... -o /app
 
 # Deploy the application binary into a lean image
 FROM gcr.io/distroless/static-debian12 AS build-release-stage
@@ -21,4 +21,4 @@ COPY --from=build-stage /ncc /ncc
 
 USER nonroot:nonroot
 
-ENTRYPOINT ["/ncc"]
+ENTRYPOINT ["/app/nexus-configuration-controller"]
