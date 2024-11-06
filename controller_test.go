@@ -372,7 +372,7 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 
 	shards = append(shards, newShard)
 
-	c := NewController(
+	c, _ := NewController(
 		ctx,
 		"test",
 		f.controllerKubeClient,
@@ -388,27 +388,27 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 	c.recorder = &record.FakeRecorder{}
 
 	for _, d := range f.mlaLister {
-		controllerNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
+		_ = controllerNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.shardMlaLister {
-		shardNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
+		_ = shardNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.secretLister {
-		controllerKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
+		_ = controllerKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.shardSecretLister {
-		shardKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
+		_ = shardKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.shardConfigLister {
-		shardKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
+		_ = shardKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.configMapLister {
-		controllerKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
+		_ = controllerKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
 	}
 
 	return c, &FakeControllerInformers{
@@ -503,24 +503,6 @@ func (f *fixture) expectedUpdateActions(controllerMla *nexuscontroller.MachineLe
 	updateMlaStatusAction := core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, "status", controllerMla.Namespace, controllerMla)
 	f.controllerNexusActions = append(f.controllerNexusActions, updateMlaStatusAction)
 	f.shardKubeActions = append(f.shardKubeActions, updatedSecretAction, updatedConfigAction)
-}
-
-func (f *fixture) reset() *fixture {
-	f.mlaLister = []*nexuscontroller.MachineLearningAlgorithm{}
-	f.secretLister = []*corev1.Secret{}
-	f.configMapLister = []*corev1.ConfigMap{}
-
-	f.shardMlaLister = []*nexuscontroller.MachineLearningAlgorithm{}
-	f.shardSecretLister = []*corev1.Secret{}
-	f.configMapLister = []*corev1.ConfigMap{}
-
-	f.controllerNexusActions = []core.Action{}
-	f.controllerKubeActions = []core.Action{}
-
-	f.shardKubeActions = []core.Action{}
-	f.shardNexusActions = []core.Action{}
-
-	return f
 }
 
 // TestCreatesMla test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster

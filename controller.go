@@ -103,7 +103,7 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 			return
 		}
 	default:
-		utilruntime.HandleError(errors.New(fmt.Sprintf("Unsupported type passed into work queue: %s", ot)))
+		utilruntime.HandleError(fmt.Errorf("unsupported type passed into work queue: %s", ot))
 		return
 	}
 
@@ -168,7 +168,7 @@ func NewController(
 
 	controllersecretinformer coreinformers.SecretInformer,
 	controllerconfigmapinformer coreinformers.ConfigMapInformer,
-	controllermlainformer nexusinformers.MachineLearningAlgorithmInformer) *Controller {
+	controllermlainformer nexusinformers.MachineLearningAlgorithmInformer) (*Controller, error) {
 	logger := klog.FromContext(ctx)
 
 	// Create event broadcaster
@@ -208,12 +208,16 @@ func NewController(
 
 	logger.Info("Setting up event handlers")
 	// Set up an event handler for when Machine Learning Algorithm resources change
-	controllermlainformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr := controllermlainformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueMachineLearningAlgorithm,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueMachineLearningAlgorithm(new)
 		},
 	})
+
+	if handlerErr != nil {
+		return nil, handlerErr
+	}
 
 	// This way, we don't need to implement custom logic for handling Secret/ConfigMap resources.
 	// More info on this pattern:
@@ -223,7 +227,7 @@ func NewController(
 	// handler will lookup the owner of the given Secret, and if it is
 	// owned by a MachineLearningAlgorithm resource then the handler will enqueue that
 	// MachineLearningAlgorithm resource for processing.
-	controllersecretinformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr = controllersecretinformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.handleObject,
 		UpdateFunc: func(old, new interface{}) {
 			newSecret := new.(*corev1.Secret)
@@ -238,11 +242,15 @@ func NewController(
 		DeleteFunc: controller.handleObject,
 	})
 
+	if handlerErr != nil {
+		return nil, handlerErr
+	}
+
 	// Set up an event handler for when ConfigMap resources change. This
 	// handler will lookup the owner of the given ConfigMap, and if it is
 	// owned by a MachineLearningAlgorithm resource then the handler will enqueue that
 	// MachineLearningAlgorithm resource for processing.
-	controllerconfigmapinformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr = controllerconfigmapinformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.handleObject,
 		UpdateFunc: func(old, new interface{}) {
 			newConfigMap := new.(*corev1.ConfigMap)
@@ -257,7 +265,11 @@ func NewController(
 		DeleteFunc: controller.handleObject,
 	})
 
-	return controller
+	if handlerErr != nil {
+		return nil, handlerErr
+	}
+
+	return controller, nil
 }
 
 // runWorker is a long-running function that will continually call the
