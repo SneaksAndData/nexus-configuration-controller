@@ -45,9 +45,11 @@ jobs:
         run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
         
       - name: Visualise Coverage
+        if: ${{ github.ref != 'refs/heads/main' && always() }}
         run: go tool cover -html=cover.out -o=cover.html
         
       - name: Upload Coverage
+        if: ${{ github.ref != 'refs/heads/main' && always() }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -56,6 +58,7 @@ jobs:
         id: cover
           
       - name: Post Coverage
+        if: ${{ github.ref != 'refs/heads/main' && always() }}
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.number }}
