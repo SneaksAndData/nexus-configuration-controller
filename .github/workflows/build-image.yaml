@@ -1,4 +1,5 @@
 name: Build Image
+run-name: Build Container and Helm Chart from ${{github.ref_name}} by @${{ github.actor }}
 
 on: workflow_dispatch
 
