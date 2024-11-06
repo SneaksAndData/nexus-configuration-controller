@@ -1,7 +1,9 @@
 name: Run tests with coverage
-run-name: Validate ${{github.ref_name}} to ${{ inputs.environment }} by @${{ github.actor }}
+run-name: Validate ${{github.ref_name}} by @${{ github.actor }}
 
 on:
+  push:
+    branches: [ main ]  
   pull_request:
     branches: [ main ]
 
@@ -49,4 +51,13 @@ jobs:
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           ## name of branch where badges are stored
           ## ideally this should be orphan branch (see below how to create this branch)
-          git-branch: badges 
+          git-branch: badges
+
+      - name: Visualise Coverage
+        run: go tool cover -html=cover.out -o=cover.html
+
+      - name: Post Coverage
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          body-path: 'cover.html'   
