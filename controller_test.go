@@ -505,24 +505,6 @@ func (f *fixture) expectedUpdateActions(controllerMla *nexuscontroller.MachineLe
 	f.shardKubeActions = append(f.shardKubeActions, updatedSecretAction, updatedConfigAction)
 }
 
-func (f *fixture) reset() *fixture {
-	f.mlaLister = []*nexuscontroller.MachineLearningAlgorithm{}
-	f.secretLister = []*corev1.Secret{}
-	f.configMapLister = []*corev1.ConfigMap{}
-
-	f.shardMlaLister = []*nexuscontroller.MachineLearningAlgorithm{}
-	f.shardSecretLister = []*corev1.Secret{}
-	f.configMapLister = []*corev1.ConfigMap{}
-
-	f.controllerNexusActions = []core.Action{}
-	f.controllerKubeActions = []core.Action{}
-
-	f.shardKubeActions = []core.Action{}
-	f.shardNexusActions = []core.Action{}
-
-	return f
-}
-
 // TestCreatesMla test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
 func TestCreatesMla(t *testing.T) {
 	f := newFixture(t)

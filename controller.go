@@ -103,7 +103,7 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 			return
 		}
 	default:
-		utilruntime.HandleError(errors.New(fmt.Sprintf("Unsupported type passed into work queue: %s", ot)))
+		utilruntime.HandleError(fmt.Errorf("unsupported type passed into work queue: %s", ot))
 		return
 	}
 
