@@ -105,7 +105,7 @@ func main() {
 	controllerKubeInformerFactory.Start(ctx.Done())
 	controllerNexusInformerFactory.Start(ctx.Done())
 
-	controller := NewController(
+	controller, controllerCreationErr := NewController(
 		ctx,
 		controllerns,
 		controllerClient,
@@ -114,6 +114,11 @@ func main() {
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
 		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms())
+
+	if controllerCreationErr != nil {
+		logger.Error(controllerCreationErr, "Error creating a controller instance")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
 
 	if err = controller.Run(ctx, workers); err != nil {
 		logger.Error(err, "Error running controller")

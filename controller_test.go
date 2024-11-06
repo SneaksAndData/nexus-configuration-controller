@@ -372,7 +372,7 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 
 	shards = append(shards, newShard)
 
-	c := NewController(
+	c, _ := NewController(
 		ctx,
 		"test",
 		f.controllerKubeClient,
@@ -388,27 +388,27 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 	c.recorder = &record.FakeRecorder{}
 
 	for _, d := range f.mlaLister {
-		controllerNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
+		_ = controllerNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.shardMlaLister {
-		shardNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
+		_ = shardNexusInf.Science().V1().MachineLearningAlgorithms().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.secretLister {
-		controllerKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
+		_ = controllerKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.shardSecretLister {
-		shardKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
+		_ = shardKubeInf.Core().V1().Secrets().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.shardConfigLister {
-		shardKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
+		_ = shardKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.configMapLister {
-		controllerKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
+		_ = controllerKubeInf.Core().V1().ConfigMaps().Informer().GetIndexer().Add(d)
 	}
 
 	return c, &FakeControllerInformers{
