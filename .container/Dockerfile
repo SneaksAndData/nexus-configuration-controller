@@ -10,7 +10,7 @@ RUN go mod download && go mod vendor
 
 COPY *.go ./
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v ./... -o /app
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /app -v ./... 
 
 # Deploy the application binary into a lean image
 FROM gcr.io/distroless/static-debian12 AS build-release-stage
