@@ -6,7 +6,7 @@ ARG TARGETARCH
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download && go get ./
+RUN go mod download && go get ./...
 
 COPY *.go ./
 
