@@ -152,14 +152,3 @@ controller:
   
   # Number of worker threads to use for the processing queue
   workers: 10
-  
-# Default volumes mounted to NCC pods
-volumes:
-  - name: shards-kube-config
-    secretRef:
-      name: {{ .Values.controller.shardsConfigSecretName }}
-      
-# Default volume mounts on NCC pods      
-volumeMounts:
-  - name: shards-kube-config
-    mountPath: {{ .Values.controller.shardsConfigPath }}
