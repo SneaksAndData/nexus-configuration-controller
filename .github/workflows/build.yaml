@@ -68,21 +68,9 @@ jobs:
       - name: Check Coverage
         uses: vladopajic/go-test-coverage@v2
         with:
-          profile: cover.out
-          local-prefix: science.sneaksanddata.com/nexus-configuration-controller
-          threshold-file: 80
-          threshold-package: 80
-          threshold-total: 90
-          exclude:
-            # Exclude files or packages matching their paths
-            paths:
-              - \.pb\.go$    # excludes all protobuf generated files
-              - ^pkg/generated     # exclude generated code
-              - ^pkg/signals     # exclude signal handlers from sample controller
-              - hack/*.go
-              - main.go
-          
-          ## adge is created and committed only for main branch
+          config: ./.testcoverage.yml
+
+          ## badge is created and committed only for main branch
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           ## name of branch where badges are stored
           ## ideally this should be orphan branch (see below how to create this branch)
