@@ -99,8 +99,8 @@ func (se *SyncError) merged() string {
 	var sb strings.Builder
 	if se.failedSecretError != nil {
 		sb.WriteString(se.failedSecretError.Error())
+		sb.WriteString("\n")
 	}
-	sb.WriteString("\n")
 	if se.failedConfigMapError != nil {
 		sb.WriteString(se.failedConfigMapError.Error())
 	}
