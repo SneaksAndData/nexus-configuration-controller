@@ -5,20 +5,19 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
+COPY . ./
 
-COPY *.go ./
+RUN go mod verify && go mod vendor
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /ncc
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /app -v ./... 
 
 # Deploy the application binary into a lean image
 FROM gcr.io/distroless/static-debian12 AS build-release-stage
 
-WORKDIR /
+WORKDIR /app
 
-COPY --from=build-stage /ncc /ncc
+COPY --from=build-stage /app /app
 
 USER nonroot:nonroot
 
-ENTRYPOINT ["/ncc"]
+ENTRYPOINT ["/app/nexus-configuration-controller"]

@@ -130,6 +130,6 @@ func init() {
 	flag.StringVar(&shardconfigpath, "shardscfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
 	flag.StringVar(&controllerconfigpath, "controllercfg", "", "Path to a kubeconfig file for the controller cluster.")
 	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
-	flag.StringVar(&controllerns, "namespace", "", "Path to a kubeconfig file for the controller cluster.")
+	flag.StringVar(&controllerns, "namespace", "", "Namespace the controller is deployed to.")
 	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
 }

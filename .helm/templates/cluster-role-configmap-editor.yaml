@@ -1,0 +1,26 @@
+{{- if .Values.rbac.clusterRole.configMapEditor.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "app.clusteRole.configMapEditor" . }}
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"    
+    {{- include "app.labels" $ | nindent 4 }}
+    {{- with .Values.rbac.clusterRole.configMapEditor.additionalLabels }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.rbac.clusterRole.configMapEditor.additionalAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+rules:
+  - verbs:
+      - create
+      - update
+      - patch
+      - delete
+    apiGroups:
+      - ""
+    resources:
+      - configmaps
+{{- end }}

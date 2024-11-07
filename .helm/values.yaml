@@ -1,0 +1,154 @@
+environment: "Production"
+
+image:
+  # Repository to pull the image from
+  repository: "ghcr.io/sneaksanddata/nexus-configuration-controller"
+  
+  # Tag to pull (defaults to the chart appVersion)
+  tag: ""
+  
+  # Image pull policy
+  pullPolicy: "IfNotPresent"
+
+# Image pull secrets for private repositories
+imagePullSecrets: []
+
+# Override the application name
+nameOverride: ""
+
+# Fullname override
+fullnameOverride: ""
+
+# Service account configuration
+serviceAccount:
+  
+  # Specifies whether a service account should be created
+  create: true
+  
+  # Annotations to add to the service account
+  annotations: {}
+  
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  
+### Role Based Access Control configuration
+rbac:
+  
+  # Specifies whether RBAC resources should be created
+  clusterRole:
+    
+    # Allows NCC to manage secrets in the installation namespace
+    secretEditor:
+      additionalLabels: {}
+      additionalAnnotations: {}
+      create: true
+      nameOverride: ""
+    
+    # Allows NCC to manage configmaps in the installation namespace
+    configMapEditor:
+      additionalLabels: {}
+      additionalAnnotations: {}
+      create: true
+      nameOverride: ""
+    
+    # Allows NCC to manage MachineLearningAlgorithm resources in the installation namespace
+    mlaEditor:
+      additionalLabels: {}
+      additionalAnnotations: {}
+      create: true
+      nameOverride: ""
+  
+  # This parameter determines whether role binding resources need to be created.
+  # If you have any roles in your configuration set to 'true', then this parameter for creating role binding resources
+  # should also be set to 'true'.
+  clusterRoleBindings:
+    additionalLabels: {}
+    additionalAnnotations: {}
+    create: true  
+    
+# Additional labels for the deployment and pods
+additionalLabels: {}
+# Example:
+#
+#  app.my-company.com/component: ncc
+
+# Additional labels for the deployment and pods
+additionalAnnotations: {}
+  # Example:
+  #
+  #  app.my-company.com/component: ncc
+  #  app.my-company.com/application: nexus
+
+# Extra environment variables to set in the deployment
+extraEnv: {}
+# Example:
+#
+#  - name: WORKERS_COUNT
+#    value: 100
+
+# Extra environment variables referencing a ConfigMap or Secret
+extraEnvFrom: {}
+# Example:
+#
+#  envFrom:
+#    - configMapRef:
+#        name: custom-api-access-token
+  
+# Extra volumes to add to the deployment
+extraVolumes: {}
+  # Example:
+  # 
+  #  - name: data-volume
+  #    emptyDir:
+  #      sizeLimit: 500Mi
+    
+# Extra volumes to add to the deployment
+extraVolumeMounts: {}
+# Example:
+#
+#  - mountPath: /data
+#    name: data-volume
+
+# Resources constraints. By default, the operator does not specify any constraints to allow for easier deployment
+resources: {}
+# Example:
+#
+#  requests:
+#    cpu: 1
+#    memory: 1Gi
+#  limits:
+#    cpu: 1
+#    memory: 1Gi
+
+# Node labels for pod assignment
+tolerations: { }
+
+# Node labels for pod assignment
+affinity: { }
+
+# Security context settings for the container
+# Note that default image is distroless and runs as non-root user by default.
+securityContext: {}
+
+# Nexus Configuration Controller settings
+controller:
+  # kubeconfig location for the NCC. Defaults to InClusterConfig if not provided (empty string)
+  # If provided, must be mounted via a volumeMount
+  kubeConfigPath: ""
+  
+  # path to the directory containing kubeconfigs for all shards controlled by this NCC instance
+  shardsConfigPath: "/app/config/shards"
+  
+  # path to the Secret containing shard kubeconfig files
+  # File name format should be <shard cluster name>.kubeconfig
+  shardsConfigSecretName: "ncc-shards-kube-config"
+  
+  # Alias for the cluster NCC is deployed to
+  alias: "controller-cluster"
+  
+  # Namespace the controller is deployed to
+  namespace: "nexus"
+  
+  # Number of worker threads to use for the processing queue
+  workers: 10
