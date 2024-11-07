@@ -571,7 +571,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	if err != nil {
 		return err
 	}
-	if len(syncErrors) > 0 {
+	if len(mergedSyncErrors) > 0 {
 		return fmt.Errorf("errors occured when syncing Secrets/ConfigMaps to Shards: %v", mergedSyncErrors)
 	}
 
