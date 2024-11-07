@@ -74,4 +74,4 @@ jobs:
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           ## name of branch where badges are stored
           ## ideally this should be orphan branch (see below how to create this branch)
-          git-branch: badges 
+          git-branch: badges
