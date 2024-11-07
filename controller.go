@@ -18,11 +18,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	"maps"
 	"reflect"
 	v1 "science.sneaksanddata.com/nexus-configuration-controller/pkg/apis/science/v1"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned/scheme"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
+	"strings"
 	"time"
 
 	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
@@ -88,6 +88,23 @@ type Controller struct {
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
+}
+
+type SyncError struct {
+	failedSecretError    error
+	failedConfigMapError error
+}
+
+func (se *SyncError) merged() string {
+	var sb strings.Builder
+	if se.failedSecretError != nil {
+		sb.WriteString(se.failedSecretError.Error())
+	}
+	sb.WriteString("\n")
+	if se.failedConfigMapError != nil {
+		sb.WriteString(se.failedConfigMapError.Error())
+	}
+	return sb.String()
 }
 
 // enqueueMachineLearningAlgorithm takes a MachineLearningAlgorithm resource and converts it into a namespace/name
@@ -282,7 +299,7 @@ func (c *Controller) runWorker(ctx context.Context) {
 
 // processNextWorkItem will read a single work item from the workqueue and
 // attempt to process it, by calling the syncHandler.
-func (c *Controller) processNextWorkItem(ctx context.Context) bool {
+func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
 	objRef, shutdown := c.workqueue.Get()
 	logger := klog.FromContext(ctx)
 
@@ -323,7 +340,11 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 func (c *Controller) updateMachineLearningAlgorithmStatus(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string, receivedBy []string, syncErrors map[string]string) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	mlaCopy := mla.DeepCopy()
-	mlaCopy.Status.State = "Ready"
+	if len(syncErrors) > 0 {
+		mlaCopy.Status.State = "Failed"
+	} else {
+		mlaCopy.Status.State = "Ready"
+	}
 	mlaCopy.Status.LastUpdatedTimestamp = metav1.Now()
 	mlaCopy.Status.SyncedSecrets = updatedSecrets
 	mlaCopy.Status.SyncedConfigurations = updatedConfigMaps
@@ -499,8 +520,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	//}
 
 	// sync MachineLearningAlgorithm, Secrets and ConfigMaps referenced by it
-	secretSyncErrors := map[string]string{}
-	configMapSyncErrors := map[string]string{}
+	syncErrors := map[string]*SyncError{}
 
 	for _, shard := range c.nexusShards {
 		shardMla, err := shard.MlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
@@ -528,24 +548,24 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		configMapSyncErr := c.syncConfigMapsToShard(mla.Namespace, mla, shardMla, shard, &logger)
 		// in case secrets were not synced successfully, save the error for Status update later
 		// for this Shard and move on to the next
-		if secretSyncErr != nil {
-			secretSyncErrors[shard.Name] = secretSyncErr.Error()
-		}
-		if configMapSyncErr != nil {
-			configMapSyncErrors[shard.Name] = configMapSyncErr.Error()
+		syncErrors[shard.Name] = &SyncError{
+			failedSecretError:    secretSyncErr,
+			failedConfigMapError: configMapSyncErr,
 		}
 	}
 
 	// Finally, we update the status block of the MachineLearningAlgorithm resource in the controller cluster to reflect the
 	// current state of the world across all Shards
 	// merge sync errors for convenience
-	mergedSyncErrors := maps.Clone(secretSyncErrors)
-	maps.Copy(mergedSyncErrors, configMapSyncErrors)
+	mergedSyncErrors := map[string]string{}
+	for shardName, syncErr := range syncErrors {
+		mergedSyncErrors[shardName] = syncErr.merged()
+	}
 	err = c.updateMachineLearningAlgorithmStatus(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames(), mergedSyncErrors)
 	if err != nil {
 		return err
 	}
-	if len(secretSyncErrors) > 0 || len(configMapSyncErrors) > 0 {
+	if len(syncErrors) > 0 {
 		return fmt.Errorf("errors occured when syncing Secrets/ConfigMaps to Shards: %v", mergedSyncErrors)
 	}
 
@@ -557,7 +577,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *Controller) Run(ctx context.Context, workers int) error {
+func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-ignore
 	defer utilruntime.HandleCrash()
 	defer c.workqueue.ShutDown()
 	logger := klog.FromContext(ctx)

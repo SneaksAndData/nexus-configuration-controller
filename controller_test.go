@@ -124,15 +124,22 @@ func expectedMla(mla *nexuscontroller.MachineLearningAlgorithm, secret *corev1.S
 	mlaCopy := mla.DeepCopy()
 	mlaCopy.Status.State = "Ready"
 	mlaCopy.Status.LastUpdatedTimestamp = metav1.Now()
-	mlaCopy.Status.SyncedSecrets = make([]string, 0)
-	mlaCopy.Status.SyncedSecrets = append(mlaCopy.Status.SyncedSecrets, secret.Name)
-
-	mlaCopy.Status.SyncedConfigurations = make([]string, 0)
-	mlaCopy.Status.SyncedConfigurations = append(mlaCopy.Status.SyncedConfigurations, configMap.Name)
-
-	mlaCopy.Status.SyncedToClusters = make([]string, 0)
-	mlaCopy.Status.SyncedToClusters = append(mlaCopy.Status.SyncedToClusters, "shard0")
+	mlaCopy.Status.SyncedSecrets = []string{secret.Name}
+	mlaCopy.Status.SyncedConfigurations = []string{configMap.Name}
+	mlaCopy.Status.SyncedToClusters = []string{"shard0"}
 	mlaCopy.Status.SyncErrors = map[string]string{}
+
+	return mlaCopy
+}
+
+func expectedMlaWithErrors(mla *nexuscontroller.MachineLearningAlgorithm, secret *corev1.Secret, configMap *corev1.ConfigMap, syncErrors map[string]string) *nexuscontroller.MachineLearningAlgorithm {
+	mlaCopy := mla.DeepCopy()
+	mlaCopy.Status.State = "Failed"
+	mlaCopy.Status.LastUpdatedTimestamp = metav1.Now()
+	mlaCopy.Status.SyncedSecrets = []string{secret.Name}
+	mlaCopy.Status.SyncedConfigurations = []string{configMap.Name}
+	mlaCopy.Status.SyncedToClusters = []string{"shard0"}
+	mlaCopy.Status.SyncErrors = syncErrors
 
 	return mlaCopy
 }
@@ -182,16 +189,22 @@ func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onS
 		labels = expectedLabels()
 	}
 	cargs[0] = "job.py"
-	envFrom[0] = corev1.EnvFromSource{
-		SecretRef: &corev1.SecretEnvSource{
-			LocalObjectReference: corev1.LocalObjectReference{Name: secret.Name},
-		},
+	if secret != nil {
+		envFrom[0] = corev1.EnvFromSource{
+			SecretRef: &corev1.SecretEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secret.Name},
+			},
+		}
 	}
-	envFrom[1] = corev1.EnvFromSource{
-		ConfigMapRef: &corev1.ConfigMapEnvSource{
-			LocalObjectReference: corev1.LocalObjectReference{Name: configMap.Name},
-		},
+
+	if configMap != nil {
+		envFrom[1] = corev1.EnvFromSource{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: configMap.Name},
+			},
+		}
 	}
+
 	return &nexuscontroller.MachineLearningAlgorithm{
 		TypeMeta: metav1.TypeMeta{APIVersion: nexuscontroller.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
@@ -462,8 +475,8 @@ func (f *fixture) runController(ctx context.Context, mlaRefs []cache.ObjectName,
 	f.checkActions(f.controllerKubeActions, f.controllerKubeClient.Actions())
 }
 
-func (f *fixture) run(ctx context.Context, mlaRefs []cache.ObjectName) {
-	f.runController(ctx, mlaRefs, true, false)
+func (f *fixture) run(ctx context.Context, mlaRefs []cache.ObjectName, expectError bool) {
+	f.runController(ctx, mlaRefs, true, expectError)
 }
 
 func getRef(mla *nexuscontroller.MachineLearningAlgorithm) cache.ObjectName {
@@ -541,8 +554,39 @@ func TestCreatesMla(t *testing.T) {
 		expectedShardConfigMap(mlaConfigMap, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
 		false)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)})
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully created a new MachineLearningAlgorithm and related secrets and configurations on the shard cluster")
+}
+
+// TestSkipsInvalidMla tests that resource creation is skipped with a status update in case referenced configurations do not exist
+func TestSkipsInvalidMla(t *testing.T) {
+	f := newFixture(t)
+	mlaSecret := newSecret("test-secret", nil)
+	mlaConfigMap := newConfigMap("test-config", nil)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			mlaListResults: []*nexuscontroller.MachineLearningAlgorithm{mla},
+
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingMlaObjects:   []runtime.Object{mla},
+		},
+		&NexusFixture{},
+	)
+
+	f.expectControllerUpdateMlaStatusAction(expectedMlaWithErrors(mla, mlaSecret, mlaConfigMap, map[string]string{"shard0": "secret \"test-secret\" not found\nconfigmap \"test-config\" not found"}))
+	f.expectShardActions(
+		expectedShardMla(mla, ""),
+		nil,
+		nil,
+		false)
+
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
+	t.Log("Controller skipped a misconfigured Mla resource")
 }
 
 // TestUpdatesMlaSecretAndConfig test that update to a secret referenced by the MLA is propagated to shard clusters
@@ -597,7 +641,7 @@ func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 
 	f.expectedUpdateActions(expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated), mlaOnShard, mlaSecretOnShardUpdated, mlaConfigMapOnShardUpdated)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)})
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully updated a Secret and a ConfigMap in the shard cluster after those were updated in the controller cluster")
 }
 
@@ -637,7 +681,7 @@ func TestCreatesSharedResources(t *testing.T) {
 		expectedShardSecret(mlaSecretOnShard1, []*nexuscontroller.MachineLearningAlgorithm{mlaOnShard1, expectedShardMla(mla2, "")}),
 		expectedShardConfigMap(mlaConfigOnShard1, []*nexuscontroller.MachineLearningAlgorithm{mlaOnShard1, expectedShardMla(mla2, "")}))
 
-	f.run(ctx, []cache.ObjectName{getRef(mla2)})
+	f.run(ctx, []cache.ObjectName{getRef(mla2)}, false)
 	t.Log("Controller successfully created a second Mla resource referencing the same Secret and ConfigMap in the controller cluster")
 }
 
@@ -673,6 +717,6 @@ func TestTakesOwnership(t *testing.T) {
 		expectedShardConfigMap(mlaConfigMap, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
 		true)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)})
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully took ownership of a MachineLearningAlgorithm and related secrets and configurations on the shard cluster")
 }
