@@ -558,8 +558,10 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	// current state of the world across all Shards
 	// merge sync errors for convenience
 	mergedSyncErrors := map[string]string{}
-	for shardName, syncErr := range syncErrors {
-		mergedSyncErrors[shardName] = syncErr.merged()
+	if len(syncErrors) > 0 {
+		for shardName, syncErr := range syncErrors {
+			mergedSyncErrors[shardName] = syncErr.merged()
+		}
 	}
 	err = c.updateMachineLearningAlgorithmStatus(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames(), mergedSyncErrors)
 	if err != nil {
