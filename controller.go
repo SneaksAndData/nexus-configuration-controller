@@ -95,6 +95,10 @@ type SyncError struct {
 	failedConfigMapError error
 }
 
+func (se *SyncError) isEmpty() bool {
+	return se.failedSecretError == nil && se.failedConfigMapError == nil
+}
+
 func (se *SyncError) merged() string {
 	var sb strings.Builder
 	if se.failedSecretError != nil {
@@ -558,8 +562,8 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	// current state of the world across all Shards
 	// merge sync errors for convenience
 	mergedSyncErrors := map[string]string{}
-	if len(syncErrors) > 0 {
-		for shardName, syncErr := range syncErrors {
+	for shardName, syncErr := range syncErrors {
+		if !syncErr.isEmpty() {
 			mergedSyncErrors[shardName] = syncErr.merged()
 		}
 	}
