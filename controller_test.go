@@ -541,7 +541,7 @@ func TestCreatesMla(t *testing.T) {
 			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{mla},
 			secretListResults:    []*corev1.Secret{mlaSecret},
 			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  make([]runtime.Object, 0),
+			existingCoreObjects:  []runtime.Object{},
 			existingMlaObjects:   []runtime.Object{mla},
 		},
 		&NexusFixture{},
@@ -556,6 +556,64 @@ func TestCreatesMla(t *testing.T) {
 
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully created a new MachineLearningAlgorithm and related secrets and configurations on the shard cluster")
+}
+
+// TestDetectsRogue tests the rogue secrets or configs are detected and reported as errors correctly
+func TestDetectsRogue(t *testing.T) {
+	f := newFixture(t)
+	mlaSecret := newSecret("test-secret", nil)
+	mlaConfigMap := newConfigMap("test-config", nil)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{mla},
+			secretListResults:    []*corev1.Secret{mlaSecret},
+			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
+			existingCoreObjects:  []runtime.Object{},
+			existingMlaObjects:   []runtime.Object{mla},
+		},
+		&NexusFixture{
+			secretListResults: []*corev1.Secret{mlaSecret},
+		},
+	)
+
+	f.expectControllerUpdateMlaStatusAction(expectedMlaWithErrors(mla, mlaSecret, mlaConfigMap, map[string]string{
+		"shard0": "Resource \"test-secret\" already exists and is not managed by any Machine Learning Algorithm\n",
+	}))
+	f.expectShardActions(
+		expectedShardMla(mla, ""),
+		nil,
+		expectedShardConfigMap(mlaConfigMap, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
+		false)
+
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
+	t.Log("Controller successfully detected a rogue resource on the shard cluster")
+}
+
+// TestHandlesNotExistingResource tests that missing Mla case is handled by the controller
+func TestHandlesNotExistingResource(t *testing.T) {
+	f := newFixture(t)
+	mlaSecret := newSecret("test-secret", nil)
+	mlaConfigMap := newConfigMap("test-config", nil)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			mlaListResults: []*nexuscontroller.MachineLearningAlgorithm{},
+
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingMlaObjects:   []runtime.Object{},
+		},
+		&NexusFixture{},
+	)
+
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
+	t.Log("Controller successfully reported an error for the missing Mla resource")
 }
 
 // TestSkipsInvalidMla tests that resource creation is skipped with a status update in case referenced configurations do not exist
