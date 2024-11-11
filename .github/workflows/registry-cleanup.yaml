@@ -22,8 +22,8 @@ jobs:
           package-name: 'nexus-configuration-controller'
           package-type: container
           token: ${{ secrets.GITHUB_TOKEN }}
-          min-versions-to-keep: 10
-          delete-only-pre-release-versions: "true"
+          min-versions-to-keep: 100
+          ignore-versions: v([0-9]+\.?)+$
 
       - name: Delete old package versions of helm/nexus-configuration-controller
         uses: actions/delete-package-versions@v5.0.0
@@ -31,5 +31,5 @@ jobs:
           package-name: 'helm/nexus-configuration-controller'
           package-type: container
           token: ${{ secrets.GITHUB_TOKEN }}
-          min-versions-to-keep: 10
-          delete-only-pre-release-versions: "true"
+          min-versions-to-keep: 100
+          ignore-versions: v([0-9]+\.?)+$
