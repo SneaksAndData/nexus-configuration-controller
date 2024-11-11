@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024. ECCO Data & AI
+ * Copyright (c) 2024. ECCO Data & AI Open-Source Project Maintainers.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
