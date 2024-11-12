@@ -613,11 +613,7 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 	if ok := cache.WaitForCacheSync(ctx.Done(), c.secretsSynced, c.configMapsSynced, c.mlaSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
-	for _, shard := range c.nexusShards {
-		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.MlaSynced); !ok {
-			return fmt.Errorf("failed to wait for shard %s caches to sync", shard.Name)
-		}
-	}
+	logger.Info("Controller informers synced")
 
 	logger.Info("Starting workers", "count", workers)
 	// Launch workers to process MachineLearningAlgorithm resources

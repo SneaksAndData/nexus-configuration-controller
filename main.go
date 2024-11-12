@@ -40,6 +40,14 @@ var (
 	workers              int
 )
 
+func init() {
+	flag.StringVar(&shardconfigpath, "shards_cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
+	flag.StringVar(&controllerconfigpath, "controller_cfg", "", "Path to a kubeconfig file for the controller cluster.")
+	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
+	flag.StringVar(&controllerns, "namespace", "", "Namespace the controller is deployed to.")
+	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
+}
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
@@ -140,12 +148,4 @@ func main() {
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-}
-
-func init() {
-	flag.StringVar(&shardconfigpath, "shardscfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
-	flag.StringVar(&controllerconfigpath, "controllercfg", "", "Path to a kubeconfig file for the controller cluster.")
-	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
-	flag.StringVar(&controllerns, "namespace", "", "Namespace the controller is deployed to.")
-	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
 }
