@@ -110,9 +110,6 @@ func main() {
 			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 			shardNexusInformerFactory := informers.NewSharedInformerFactory(nexusClient, time.Second*30)
 
-			shardKubeInformerFactory.Start(ctx.Done())
-			shardNexusInformerFactory.Start(ctx.Done())
-
 			connectedShards = append(connectedShards, shards.NewShard(
 				alias,
 				strings.Split(file.Name(), ".")[0],
@@ -121,13 +118,11 @@ func main() {
 				shardNexusInformerFactory.Science().V1().MachineLearningAlgorithms(),
 				shardKubeInformerFactory.Core().V1().Secrets(),
 				shardKubeInformerFactory.Core().V1().ConfigMaps()))
+
+			shardKubeInformerFactory.Start(ctx.Done())
+			shardNexusInformerFactory.Start(ctx.Done())
 		}
 	}
-
-	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
-	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
-	controllerKubeInformerFactory.Start(ctx.Done())
-	controllerNexusInformerFactory.Start(ctx.Done())
 
 	controller, controllerCreationErr := NewController(
 		ctx,
@@ -138,6 +133,11 @@ func main() {
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
 		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms())
+
+	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
+	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
+	controllerKubeInformerFactory.Start(ctx.Done())
+	controllerNexusInformerFactory.Start(ctx.Done())
 
 	if controllerCreationErr != nil {
 		logger.Error(controllerCreationErr, "Error creating a controller instance")
