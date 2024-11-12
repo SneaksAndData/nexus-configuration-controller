@@ -18,6 +18,9 @@ WORKDIR /app
 
 COPY --from=build-stage /app /app
 
+COPY --from=public.ecr.aws/aws-cli/aws-cli /usr/local/aws-cli/ /usr/local/aws-cli/
+COPY --from=public.ecr.aws/aws-cli/aws-cli /usr/local/bin/ /usr/local/bin/ 
+
 USER nonroot:nonroot
 
 ENTRYPOINT ["/app/nexus-configuration-controller"]
