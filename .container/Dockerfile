@@ -11,6 +11,20 @@ RUN go mod verify && go mod vendor
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /app -v ./... 
 
+FROM --platform=$BUILDPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2 as aws-cli-stage
+COPY $EXE_FILENAME .
+RUN apt update && apt install -y unzip curl \
+    && cli_arch=$(test "$TARGETARCH" = "amd64" && echo "x86_64" || echo "aarch64") \
+    && curl "https://awscli.amazonaws.com/awscli-exe-linux-$cli_arch.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+  # The --bin-dir is specified so that we can copy the
+  # entire bin directory from the installer stage into
+  # into /usr/local/bin of the final stage without
+  # accidentally copying over any other executables that
+  # may be present in /usr/local/bin of the installer stage.
+    && ./aws/install --bin-dir /aws-cli-bin/
+
+
 # Deploy the application binary into a lean image
 FROM gcr.io/distroless/python3-debian12 AS build-release-stage
 
@@ -18,8 +32,8 @@ WORKDIR /app
 
 COPY --from=build-stage /app /app
 
-COPY --from=public.ecr.aws/aws-cli/aws-cli /usr/local/aws-cli/ /usr/local/aws-cli/
-COPY --from=public.ecr.aws/aws-cli/aws-cli /usr/local/bin/aws /usr/local/bin/aws 
+COPY --from=aws-cli-stage /usr/local/aws-cli/ /usr/local/aws-cli/
+COPY --from=aws-cli-stage /aws-cli-bin/ /usr/local/bin/ 
 
 USER nonroot:nonroot
 
