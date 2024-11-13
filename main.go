@@ -74,8 +74,8 @@ func main() {
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactory(controllerClient, time.Second*30)
-	controllerNexusInformerFactory := informers.NewSharedInformerFactory(controllerNexusClient, time.Second*30)
+	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(controllerns))
+	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(controllerns))
 
 	files, err := os.ReadDir(shardconfigpath)
 	if err != nil {
@@ -107,8 +107,8 @@ func main() {
 				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 			}
 
-			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
-			shardNexusInformerFactory := informers.NewSharedInformerFactory(nexusClient, time.Second*30)
+			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, time.Second*30, kubeinformers.WithNamespace(controllerns))
+			shardNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(nexusClient, time.Second*30, informers.WithNamespace(controllerns))
 
 			connectedShards = append(connectedShards, shards.NewShard(
 				alias,
