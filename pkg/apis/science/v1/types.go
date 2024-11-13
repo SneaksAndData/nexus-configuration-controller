@@ -91,7 +91,7 @@ func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
 	}
 
 	for _, ref := range mla.Spec.Env {
-		if ref.ValueFrom.SecretKeyRef != nil {
+		if ref.ValueFrom != nil && ref.ValueFrom.SecretKeyRef != nil {
 			subset = append(subset, ref.ValueFrom.SecretKeyRef.Name)
 		}
 	}
@@ -108,7 +108,7 @@ func (mla *MachineLearningAlgorithm) GetConfigMapNames() []string {
 	}
 
 	for _, ref := range mla.Spec.Env {
-		if ref.ValueFrom.ConfigMapKeyRef != nil {
+		if ref.ValueFrom != nil && ref.ValueFrom.ConfigMapKeyRef != nil {
 			subset = append(subset, ref.ValueFrom.ConfigMapKeyRef.Name)
 		}
 	}
