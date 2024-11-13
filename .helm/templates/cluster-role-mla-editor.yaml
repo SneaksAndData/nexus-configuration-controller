@@ -19,8 +19,12 @@ rules:
       - update
       - patch
       - delete
+      - list
+      - watch
+      - get 
     apiGroups:
       - "science.sneaksanddata.com"
     resources:
       - machinelearningalgorithms
+      - machinelearningalgorithm 
 {{- end }}

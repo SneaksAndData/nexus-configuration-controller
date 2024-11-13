@@ -104,6 +104,9 @@ type Controller struct {
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
+
+	// controlled namespace
+	ControlledNamespace string
 }
 
 type SyncError struct {
@@ -136,7 +139,10 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 			utilruntime.HandleError(err)
 			return
 		} else {
-			c.workqueue.Add(objectRef)
+			// only process objects in the namespace that matches controller
+			if objectRef.Namespace == c.ControlledNamespace {
+				c.workqueue.Add(objectRef)
+			}
 			return
 		}
 	default:
@@ -237,10 +243,11 @@ func NewController(
 		configMapLister:  controllerconfigmapinformer.Lister(),
 		configMapsSynced: controllerconfigmapinformer.Informer().HasSynced,
 
-		mlaLister: controllermlainformer.Lister(),
-		mlaSynced: controllermlainformer.Informer().HasSynced,
-		workqueue: workqueue.NewTypedRateLimitingQueue(ratelimiter),
-		recorder:  recorder,
+		mlaLister:           controllermlainformer.Lister(),
+		mlaSynced:           controllermlainformer.Informer().HasSynced,
+		workqueue:           workqueue.NewTypedRateLimitingQueue(ratelimiter),
+		recorder:            recorder,
+		ControlledNamespace: controllerns,
 	}
 
 	logger.Info("Setting up event handlers")
@@ -532,12 +539,6 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 
 		return err
 	}
-
-	// local test only - test specific mla
-	//if objectRef.Name != "omni-channel-crystal-solver-controller" {
-	//	c.recorder.Event(mla, corev1.EventTypeWarning, SuccessSkipped, MessageResourceSkipped)
-	//	return nil
-	//}
 
 	// sync MachineLearningAlgorithm, Secrets and ConfigMaps referenced by it
 	syncErrors := map[string]*SyncError{}
