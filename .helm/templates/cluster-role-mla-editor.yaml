@@ -26,5 +26,7 @@ rules:
       - "science.sneaksanddata.com"
     resources:
       - machinelearningalgorithms
-      - machinelearningalgorithm 
+      - machinelearningalgorithms/status
+      - machinelearningalgorithm
+      - machinelearningalgorithm/status
 {{- end }}

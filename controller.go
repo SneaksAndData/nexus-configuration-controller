@@ -367,6 +367,8 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 func (c *Controller) updateMachineLearningAlgorithmStatus(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string, receivedBy []string, syncErrors map[string]string) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	mlaCopy := mla.DeepCopy()
+	// reset object meta to avoid issues with it propagating to update
+	mlaCopy.ObjectMeta = metav1.ObjectMeta{}
 	if len(syncErrors) > 0 {
 		mlaCopy.Status.State = "Failed"
 	} else {

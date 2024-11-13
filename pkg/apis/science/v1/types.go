@@ -37,15 +37,15 @@ type MachineLearningAlgorithm struct {
 type MachineLearningAlgorithmSpec struct {
 	ImageRegistry        string                 `json:"imageRegistry"`
 	ImageRepository      string                 `json:"imageRepository"`
-	ImageTag             string                 `json:"ImageTag"`
+	ImageTag             string                 `json:"imageTag"`
 	DeadlineSeconds      *int32                 `json:"deadlineSeconds,omitempty"`
 	MaximumRetries       *int32                 `json:"maximumRetries,omitempty"`
 	Env                  []corev1.EnvVar        `json:"env,omitempty"`
 	EnvFrom              []corev1.EnvFromSource `json:"envFrom,omitempty"`
 	CpuLimit             string                 `json:"cpuLimit"`
 	MemoryLimit          string                 `json:"memoryLimit"`
-	WorkgroupHost        string                 `json:"WorkgroupHost"`
-	Workgroup            string                 `json:"Workgroup"`
+	WorkgroupHost        string                 `json:"workgroupHost"`
+	Workgroup            string                 `json:"workgroup"`
 	AdditionalWorkgroups map[string]string      `json:"additionalWorkgroups,omitempty"`
 	MonitoringParameters []string               `json:"monitoringParameters,omitempty"`
 	CustomResources      map[string]string      `json:"customResources,omitempty"`
