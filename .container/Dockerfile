@@ -11,7 +11,7 @@ RUN go mod verify && go mod vendor
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /app -v ./... 
 
-FROM --platform=$BUILDPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2 as aws-cli-stage
+FROM --platform=$BUILDPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2 AS aws-cli-stage
 RUN yum update -y && yum install -y unzip curl \
     && cli_arch=$(test "$TARGETARCH" = "amd64" && echo "x86_64" || echo "aarch64") \
     && curl "https://awscli.amazonaws.com/awscli-exe-linux-$cli_arch.zip" -o "awscliv2.zip" \

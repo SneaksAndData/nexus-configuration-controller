@@ -521,6 +521,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "objectRef", objectRef)
 
 	// Get the MachineLearningAlgorithm resource with this namespace/name
+	logger.V(4).Info(fmt.Sprintf("Syncing algorithm %s", objectRef.Name))
 	mla, err := c.mlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
 	if err != nil {
 		// The MachineLearningAlgorithm resource may no longer exist, in which case we stop
@@ -537,6 +538,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	syncErrors := map[string]*SyncError{}
 
 	for _, shard := range c.nexusShards {
+		logger.V(4).Info(fmt.Sprintf("Syncing to shard %s", shard.Name))
 		shardMla, shardErr := shard.MlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
 
 		// update this MLA in case it exists and has drifted
@@ -551,15 +553,20 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 
 		// if MachineLearningAlgorithm has not been created yet, create a new one in this shard
 		if k8serrors.IsNotFound(shardErr) {
+			logger.V(4).Info(fmt.Sprintf("Algorithm %s not found in shard %s, creating", objectRef.Name, shard.Name))
 			shardMla, shardErr = shard.CreateMachineLearningAlgorithm(mla.Name, mla.Namespace, mla.Spec, FieldManager)
 		}
 
 		// requeue on error
 		if shardErr != nil {
+			logger.V(4).Error(shardErr, fmt.Sprintf("Error processing algorithm resource on shard %s", shard.Name))
 			return shardErr
 		}
 
+		logger.V(4).Info(fmt.Sprintf("Syncing secrets to shard %s", shard.Name))
 		secretSyncErr := c.syncSecretsToShard(mla.Namespace, mla, shardMla, shard, &logger)
+
+		logger.V(4).Info(fmt.Sprintf("Syncing configmaps to shard %s", shard.Name))
 		configMapSyncErr := c.syncConfigMapsToShard(mla.Namespace, mla, shardMla, shard, &logger)
 		// in case secrets were not synced successfully, save the error for Status update later
 		// for this Shard and move on to the next
