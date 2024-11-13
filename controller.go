@@ -182,6 +182,7 @@ func (c *Controller) handleObject(obj interface{}) {
 		}
 		logger.V(4).Info("Recovered deleted object", "resourceName", object.GetName())
 	}
+
 	logger.V(4).Info("Processing object", "object", klog.KObj(object))
 	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
 		// If this object is not owned by a MachineLearningAlgorithm, skip it
@@ -191,7 +192,7 @@ func (c *Controller) handleObject(obj interface{}) {
 
 		mla, err := c.mlaLister.MachineLearningAlgorithms(object.GetNamespace()).Get(ownerRef.Name)
 		if err != nil {
-			logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "foo", ownerRef.Name)
+			logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
 			return
 		}
 
@@ -616,6 +617,12 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 	logger.Info("Controller informers synced")
+	for _, shard := range c.nexusShards {
+		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.MlaSynced); !ok {
+			return fmt.Errorf("failed to wait for shard %s caches to sync", shard.Name)
+		}
+	}
+	logger.Info("Shard informers synced")
 
 	logger.Info("Starting workers", "count", workers)
 	// Launch workers to process MachineLearningAlgorithm resources
