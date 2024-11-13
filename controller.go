@@ -68,7 +68,7 @@ const (
 	// is synced successfully
 	MessageResourceSynced = "Machine Learning Algorithm synced successfully"
 	// MessageResourceMissing is the message used for an Event fired when a MachineLearningAlgorithm references a missing Secret or a ConfigMap
-	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm is missing in the controller cluster"
+	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm %q is missing in the controller cluster"
 	MessageResourceSkipped = "Resource %q skipped, controller launched in dev mode"
 	// FieldManager distinguishes this controller from other things writing to API objects
 	FieldManager = controllerAgentName
@@ -367,8 +367,6 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 func (c *Controller) updateMachineLearningAlgorithmStatus(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string, receivedBy []string, syncErrors map[string]string) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	mlaCopy := mla.DeepCopy()
-	// reset resource version to avoid issues with it propagating to update
-	mlaCopy.ObjectMeta.ResourceVersion = ""
 	if len(syncErrors) > 0 {
 		mlaCopy.Status.State = "Failed"
 	} else {
@@ -420,7 +418,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 		secret, err := c.secretLister.Secrets(secretNamespace).Get(secretName)
 		// If the referenced Secret resource doesn't exist in the cluster where the controller is deployed, update the syncErr and move on to the next Secret
 		if k8serrors.IsNotFound(err) {
-			msg := fmt.Sprintf(MessageResourceMissing, controllerMla.Name)
+			msg := fmt.Sprintf(MessageResourceMissing, secretName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("Secret not found", "secretName", secretName, "shard", shard.Name)
 			syncErr = errors.Join(syncErr, err)
@@ -475,7 +473,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 		configMap, err := c.configMapLister.ConfigMaps(configMapNamespace).Get(configMapName)
 		// If the referenced ConfigMap resource doesn't exist in the cluster where the controller is deployed, update syncErr and move on to the next ConfigMap
 		if k8serrors.IsNotFound(err) {
-			msg := fmt.Sprintf(MessageResourceMissing, controllerMla.Name)
+			msg := fmt.Sprintf(MessageResourceMissing, configMapName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("ConfigMap not found", "configMapName", configMapName, "shard", shard.Name)
 			syncErr = errors.Join(syncErr, err)
@@ -560,7 +558,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		// update this MLA in case it drifted
 		if !reflect.DeepEqual(shardMla.Spec, mla.Spec) {
 			logger.V(4).Info(fmt.Sprintf("Content changed for MachineLearningAlgorithm %s, updating", mla.Name))
-			shardMla, err = shard.UpdateMachineLearningAlgorithm(mla, FieldManager)
+			shardMla, err = shard.UpdateMachineLearningAlgorithm(shardMla, mla.Spec, FieldManager)
 			// requeue on error
 			if err != nil {
 				return err
