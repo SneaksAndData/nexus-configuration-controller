@@ -533,6 +533,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 
 		return err
 	}
+	// TODO: must add itself to owners of all referenced secrets and configmaps, so those can be synchronised as well
 
 	// sync MachineLearningAlgorithm, Secrets and ConfigMaps referenced by it
 	syncErrors := map[string]*SyncError{}
@@ -585,6 +586,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 			mergedSyncErrors[shardName] = syncErr.merged()
 		}
 	}
+	logger.V(4).Info(fmt.Sprintf("Synced all shards, updating status for %s", mla.Name))
 	err = c.updateMachineLearningAlgorithmStatus(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames(), mergedSyncErrors)
 	if err != nil {
 		return err

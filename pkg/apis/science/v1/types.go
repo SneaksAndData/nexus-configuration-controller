@@ -78,10 +78,16 @@ type MachineLearningAlgorithmList struct {
 }
 
 func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
-	subset := make([]string, 0, len(mla.Spec.EnvFrom))
+	var subset []string
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.SecretRef != nil {
 			subset = append(subset, ref.SecretRef.Name)
+		}
+	}
+
+	for _, ref := range mla.Spec.Env {
+		if ref.ValueFrom.SecretKeyRef != nil {
+			subset = append(subset, ref.ValueFrom.SecretKeyRef.Name)
 		}
 	}
 
@@ -89,10 +95,16 @@ func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
 }
 
 func (mla *MachineLearningAlgorithm) GetConfigMapNames() []string {
-	subset := make([]string, 0, len(mla.Spec.EnvFrom))
+	var subset []string
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.ConfigMapRef != nil {
 			subset = append(subset, ref.ConfigMapRef.Name)
+		}
+	}
+
+	for _, ref := range mla.Spec.Env {
+		if ref.ValueFrom.ConfigMapKeyRef != nil {
+			subset = append(subset, ref.ValueFrom.ConfigMapKeyRef.Name)
 		}
 	}
 
