@@ -59,12 +59,17 @@ type MachineLearningAlgorithmSpec struct {
 
 // MachineLearningAlgorithmStatus is the status for a MachineLearningAlgorithm resource
 type MachineLearningAlgorithmStatus struct {
-	LastUpdatedTimestamp metav1.Time       `json:"lastUpdatedTimestamp"`
+	LastUpdatedTimestamp metav1.Time `json:"lastUpdatedTimestamp"`
+	// TODO: add synced secrets/configmaps to conditions:
+	// all secrets sync
+	// all configs sync
+	// ready
 	SyncedSecrets        []string          `json:"syncedSecrets,omitempty"`
 	SyncedConfigurations []string          `json:"syncedConfigurations,omitempty"`
 	SyncedToClusters     []string          `json:"syncedToClusters,omitempty"`
 	State                string            `json:"state"`
 	SyncErrors           map[string]string `json:"syncErrors,omitempty"`
+	//Conditions           []corev1.ConditionStatus `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -78,7 +83,7 @@ type MachineLearningAlgorithmList struct {
 }
 
 func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
-	var subset []string
+	subset := []string{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.SecretRef != nil {
 			subset = append(subset, ref.SecretRef.Name)
@@ -95,7 +100,7 @@ func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
 }
 
 func (mla *MachineLearningAlgorithm) GetConfigMapNames() []string {
-	var subset []string
+	subset := []string{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.ConfigMapRef != nil {
 			subset = append(subset, ref.ConfigMapRef.Name)
