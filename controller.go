@@ -544,25 +544,26 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	syncErrors := map[string]*SyncError{}
 
 	for _, shard := range c.nexusShards {
-		shardMla, err := shard.MlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
+		shardMla, shardErr := shard.MlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
+
+		// update this MLA in case it exists and has drifted
+		if shardErr == nil && !reflect.DeepEqual(shardMla.Spec, mla.Spec) {
+			logger.V(4).Info(fmt.Sprintf("Content changed for MachineLearningAlgorithm %s, updating", mla.Name))
+			shardMla, shardErr = shard.UpdateMachineLearningAlgorithm(shardMla, mla.Spec, FieldManager)
+			// requeue on error
+			if shardErr != nil {
+				return shardErr
+			}
+		}
+
 		// if MachineLearningAlgorithm has not been created yet, create a new one in this shard
-		if k8serrors.IsNotFound(err) {
-			shardMla, err = shard.CreateMachineLearningAlgorithm(mla, FieldManager)
+		if k8serrors.IsNotFound(shardErr) {
+			shardMla, shardErr = shard.CreateMachineLearningAlgorithm(mla.Name, mla.Namespace, mla.Spec, FieldManager)
 		}
 
 		// requeue on error
-		if err != nil {
-			return err
-		}
-
-		// update this MLA in case it drifted
-		if !reflect.DeepEqual(shardMla.Spec, mla.Spec) {
-			logger.V(4).Info(fmt.Sprintf("Content changed for MachineLearningAlgorithm %s, updating", mla.Name))
-			shardMla, err = shard.UpdateMachineLearningAlgorithm(shardMla, mla.Spec, FieldManager)
-			// requeue on error
-			if err != nil {
-				return err
-			}
+		if shardErr != nil {
+			return shardErr
 		}
 
 		secretSyncErr := c.syncSecretsToShard(mla.Namespace, mla, shardMla, shard, &logger)
