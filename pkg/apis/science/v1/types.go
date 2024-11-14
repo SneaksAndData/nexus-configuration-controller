@@ -57,19 +57,35 @@ type MachineLearningAlgorithmSpec struct {
 	MountDatadogSocket   bool                   `json:"mountDatadogSocket,omitempty"`
 }
 
+// NewShardSyncedCondition creates a new condition indicating a secret synchronisation success or failure
+func NewShardSyncedCondition(transitionTime metav1.Time, status metav1.ConditionStatus, message string) *metav1.Condition {
+	return &metav1.Condition{
+		LastTransitionTime: transitionTime,
+		Type:               "ShardInitialized",
+		Status:             status,
+		Reason:             "ShardSyncInProgress",
+		Message:            message,
+	}
+}
+
+// NewResourceReadyCondition creates a new condition indicating an overall Mla synchronisation success or failure
+func NewResourceReadyCondition(transitionTime metav1.Time, status metav1.ConditionStatus, message string) *metav1.Condition {
+	return &metav1.Condition{
+		LastTransitionTime: transitionTime,
+		Type:               "Ready",
+		Status:             status,
+		Reason:             "SyncFinalized",
+		Message:            message,
+	}
+}
+
 // MachineLearningAlgorithmStatus is the status for a MachineLearningAlgorithm resource
 type MachineLearningAlgorithmStatus struct {
-	LastUpdatedTimestamp metav1.Time `json:"lastUpdatedTimestamp"`
-	// TODO: add synced secrets/configmaps to conditions:
-	// all secrets sync
-	// all configs sync
-	// ready
-	SyncedSecrets        []string          `json:"syncedSecrets,omitempty"`
-	SyncedConfigurations []string          `json:"syncedConfigurations,omitempty"`
-	SyncedToClusters     []string          `json:"syncedToClusters,omitempty"`
-	State                string            `json:"state"`
-	SyncErrors           map[string]string `json:"syncErrors,omitempty"`
-	//Conditions           []corev1.ConditionStatus `json:"conditions,omitempty"`
+	SyncedSecrets        []string           `json:"syncedSecrets,omitempty"`
+	SyncedConfigurations []string           `json:"syncedConfigurations,omitempty"`
+	SyncedToClusters     []string           `json:"syncedToClusters,omitempty"`
+	SyncErrors           map[string]string  `json:"syncErrors,omitempty"`
+	Conditions           []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
