@@ -142,7 +142,6 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 		utilruntime.HandleError(fmt.Errorf("unsupported type passed into work queue: %s", ot))
 		return
 	}
-
 }
 
 // handleObject will take any resource implementing metav1.Object and attempt
@@ -176,21 +175,33 @@ func (c *Controller) handleObject(obj interface{}) {
 		logger.V(4).Info("Recovered deleted object", "resourceName", object.GetName())
 	}
 
-	logger.V(4).Info("Processing object", "object", klog.KObj(object))
-	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
-		// If this object is not owned by a MachineLearningAlgorithm, skip it
-		if ownerRef.Kind != "MachineLearningAlgorithm" {
+	switch ot := object.(type) {
+	case *v1.MachineLearningAlgorithm:
+		logger.V(4).Info("MLA resource deleted, removing it from shards", "mla", klog.KObj(object))
+		for _, shard := range c.nexusShards {
+			deleteErr := shard.DeleteMachineLearningAlgorithm(object.(*v1.MachineLearningAlgorithm))
+			if deleteErr != nil {
+				utilruntime.HandleErrorWithContext(context.Background(), nil, "Error deleting MLA from a connected shard", "type", ot, "shard", shard.Name)
+				return
+			}
+		}
+	default:
+		logger.V(4).Info("Processing object", "object", klog.KObj(object))
+		if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
+			// If this object is not owned by a MachineLearningAlgorithm, skip it
+			if ownerRef.Kind != "MachineLearningAlgorithm" {
+				return
+			}
+
+			mla, err := c.mlaLister.MachineLearningAlgorithms(object.GetNamespace()).Get(ownerRef.Name)
+			if err != nil {
+				logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
+				return
+			}
+
+			c.enqueueMachineLearningAlgorithm(mla)
 			return
 		}
-
-		mla, err := c.mlaLister.MachineLearningAlgorithms(object.GetNamespace()).Get(ownerRef.Name)
-		if err != nil {
-			logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
-			return
-		}
-
-		c.enqueueMachineLearningAlgorithm(mla)
-		return
 	}
 }
 
@@ -254,6 +265,7 @@ func NewController(
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueMachineLearningAlgorithm(new)
 		},
+		DeleteFunc: controller.handleObject,
 	})
 
 	if handlerErr != nil {

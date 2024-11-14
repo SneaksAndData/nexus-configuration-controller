@@ -106,6 +106,11 @@ func (shard *Shard) UpdateMachineLearningAlgorithm(mla *v1.MachineLearningAlgori
 	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(newMla.Namespace).Update(context.TODO(), newMla, metav1.UpdateOptions{FieldManager: fieldManager})
 }
 
+// DeleteMachineLearningAlgorithm removes the MLA from this shard
+func (shard *Shard) DeleteMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm) error {
+	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).Delete(context.TODO(), mla.Name, metav1.DeleteOptions{})
+}
+
 // CreateSecret creates a new Secret for a MachineLearningAlgorithm resource. It also sets
 // the appropriate OwnerReferences on the resource so handleObject can discover
 // the Foo resource that 'owns' it.
