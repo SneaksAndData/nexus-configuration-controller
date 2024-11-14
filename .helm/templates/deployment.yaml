@@ -39,7 +39,7 @@ spec:
       containers:
         - name: ncc
           args:
-            - "--shards_cfg"
+            - "--shards-cfg"
             - "{{ .Values.controller.shardsConfigPath }}"
             - "--alias"
             - "{{ .Values.controller.alias }}"
@@ -49,13 +49,13 @@ spec:
             - "{{ .Values.controller.workers }}"
             - "--v"
             - "4"
-            - "--failure_rate_base_delay"
+            - "--failure-rate-base-delay"
             - "{{ .Values.controller.backOffBaseDelay }}"
-            - "--failure_rate_max_delay"
+            - "--failure-rate-max-delay"
             - "{{ .Values.controller.backOffMaxDelay }}"
-            - "--rate_limit_per_second"
+            - "--rate-limit-per-second"
             - "{{ .Values.controller.rateLimitElementsPerSecond }}"
-            - "--rate_limit_burst"
+            - "--rate-limit-burst"
             - "{{ .Values.controller.rateLimitElementsBurst }}"
         {{- with .Values.securityContext }}
           securityContext:

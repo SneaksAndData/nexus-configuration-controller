@@ -45,15 +45,15 @@ var (
 )
 
 func init() {
-	flag.StringVar(&shardConfigPath, "shards_cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
-	flag.StringVar(&controllerConfigPath, "controller_cfg", "", "Path to a kubeconfig file for the controller cluster.")
+	flag.StringVar(&shardConfigPath, "shards-cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
+	flag.StringVar(&controllerConfigPath, "controller-cfg", "", "Path to a kubeconfig file for the controller cluster.")
 	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
 	flag.StringVar(&controllerNamespace, "namespace", "", "Namespace the controller is deployed to.")
 	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
-	flag.StringVar(&failureRateBaseDelay, "failure_rate_base_delay", "30ms", "Base delay for exponential failure backoff, milliseconds.")
-	flag.StringVar(&failureRateMaxDelay, "failure_rate_max_delay", "5s", "Max delay for exponential failure backoff, seconds.")
-	flag.IntVar(&rateLimitElementsPerSecond, "rate_limit_per_second", 50, "Max number of resources to process per second.")
-	flag.IntVar(&rateLimitElementsBurst, "rate_limit_burst", 300, "Burst this number of elements before rate limit kicks in.")
+	flag.StringVar(&failureRateBaseDelay, "failure-rate-base-delay", "30ms", "Base delay for exponential failure backoff, milliseconds.")
+	flag.StringVar(&failureRateMaxDelay, "failure-rate-max-delay", "5s", "Max delay for exponential failure backoff, seconds.")
+	flag.IntVar(&rateLimitElementsPerSecond, "rate-limit-per-second", 50, "Max number of resources to process per second.")
+	flag.IntVar(&rateLimitElementsBurst, "rate-limit-burst", 300, "Burst this number of elements before rate limit kicks in.")
 }
 
 func main() {
