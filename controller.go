@@ -361,12 +361,13 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	return true
 }
 
-func (c *Controller) reportShardCondition(mla *v1.MachineLearningAlgorithm, shardName string, updatedSecrets []string, updatedConfigMaps []string, syncError string) error {
+func (c *Controller) reportShardCondition(mla *v1.MachineLearningAlgorithm, shardName string, updatedSecrets []string, updatedConfigMaps []string, syncError string) (*v1.MachineLearningAlgorithm, error) {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	mlaCopy := mla.DeepCopy()
 	var shardCondition *metav1.Condition
+
 	if syncError != "" {
-		shardCondition = v1.NewShardSyncedCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Shard %q is not ready", shardName))
+		shardCondition = v1.NewShardSyncedCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Errors occured while syncing to shard %q, details %q", shardName, syncError))
 	} else {
 		shardCondition = v1.NewShardSyncedCondition(metav1.Now(), metav1.ConditionTrue, fmt.Sprintf("Shard %q ready", shardName))
 	}
@@ -374,18 +375,16 @@ func (c *Controller) reportShardCondition(mla *v1.MachineLearningAlgorithm, shar
 	mlaCopy.Status.SyncedSecrets = updatedSecrets
 	mlaCopy.Status.SyncedConfigurations = updatedConfigMaps
 	mlaCopy.Status.SyncedToClusters = append(mlaCopy.Status.SyncedToClusters, shardName)
-	mlaCopy.Status.SyncErrors[shardName] = syncError
 
-	_, err := c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
-	return err
+	return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
 }
 
-func (c *Controller) reportMlaCondition(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string) error {
+func (c *Controller) reportMlaCondition(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string) (*v1.MachineLearningAlgorithm, error) {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	mlaCopy := mla.DeepCopy()
 	var mlaCondition *metav1.Condition
-	if len(mlaCopy.Status.SyncErrors) > 0 {
-		mlaCondition = v1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Algorithm %q is not ready", mla.Name))
+	if mlaCopy.HasErrors() {
+		mlaCondition = v1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Algorithm %q failed synchronisation", mla.Name))
 	} else {
 		mlaCondition = v1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, fmt.Sprintf("Algorithm %q ready", mla.Name))
 	}
@@ -393,8 +392,7 @@ func (c *Controller) reportMlaCondition(mla *v1.MachineLearningAlgorithm, update
 	mlaCopy.Status.SyncedSecrets = updatedSecrets
 	mlaCopy.Status.SyncedConfigurations = updatedConfigMaps
 
-	_, err := c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
-	return err
+	return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
 }
 
 // shardNames returns names of all Shards operated by the controller
@@ -595,19 +593,25 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 			failedConfigMapError: configMapSyncErr,
 		}
 
-		err = c.reportShardCondition(mla, shard.Name, mla.GetSecretNames(), mla.GetConfigMapNames(), combinedError.merged())
+		mla, err = c.reportShardCondition(mla, shard.Name, mla.GetSecretNames(), mla.GetConfigMapNames(), combinedError.merged())
+		// requeue on error
+		if err != nil {
+			logger.V(4).Error(err, fmt.Sprintf("Error updating algorithm status conditions for shard %s", shard.Name))
+			return err
+		}
 	}
 
 	// Finally, we update the status block of the MachineLearningAlgorithm resource in the controller cluster to reflect the
 	// current state of the world across all Shards
 
 	logger.V(4).Info(fmt.Sprintf("Synced all shards, updating status for %s", mla.Name))
-	err = c.reportMlaCondition(mla, mla.GetSecretNames(), mla.GetConfigMapNames())
+	mla, err = c.reportMlaCondition(mla, mla.GetSecretNames(), mla.GetConfigMapNames())
 	if err != nil {
+		logger.V(4).Error(err, fmt.Sprintf("Error setting ready status condition"))
 		return err
 	}
-	if len(mla.Status.SyncErrors) > 0 {
-		return fmt.Errorf("errors occured when syncing Secrets/ConfigMaps to Shards: %v", mla.Status.SyncErrors)
+	if mla.HasErrors() {
+		return fmt.Errorf("errors occured when syncing Secrets/ConfigMaps to Shards: %v", mla.FirstError())
 	}
 
 	c.recorder.Event(mla, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)

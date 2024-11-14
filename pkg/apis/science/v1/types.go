@@ -84,8 +84,29 @@ type MachineLearningAlgorithmStatus struct {
 	SyncedSecrets        []string           `json:"syncedSecrets,omitempty"`
 	SyncedConfigurations []string           `json:"syncedConfigurations,omitempty"`
 	SyncedToClusters     []string           `json:"syncedToClusters,omitempty"`
-	SyncErrors           map[string]string  `json:"syncErrors,omitempty"`
 	Conditions           []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// HasErrors checks if this MachineLearningAlgorithm has any errors when syncing to shards
+func (mla *MachineLearningAlgorithm) HasErrors() bool {
+	for _, condition := range mla.Status.Conditions {
+		if condition.Status == metav1.ConditionFalse {
+			return true
+		}
+	}
+
+	return false
+}
+
+// FirstError returns error message from the first False condition for this MachineLearningAlgorithm
+func (mla *MachineLearningAlgorithm) FirstError() string {
+	for _, condition := range mla.Status.Conditions {
+		if condition.Status == metav1.ConditionFalse {
+			return condition.Message
+		}
+	}
+
+	return ""
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
