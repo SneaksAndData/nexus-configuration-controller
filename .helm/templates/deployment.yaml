@@ -49,6 +49,14 @@ spec:
             - "{{ .Values.controller.workers }}"
             - "--v"
             - "4"
+            - "--failure_rate_base_delay"
+            - "{{ .Values.controller.backOffBaseDelay }}"
+            - "--failure_rate_max_delay"
+            - "{{ .Values.controller.backOffMaxDelay }}"
+            - "--rate_limit_per_second"
+            - "{{ .Values.controller.rateLimitElementsPerSecond }}"
+            - "--rate_limit_burst"
+            - "{{ .Values.controller.rateLimitElementsBurst }}"
         {{- with .Values.securityContext }}
           securityContext:
           {{- toYaml . | nindent 12 }}
