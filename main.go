@@ -38,8 +38,8 @@ var (
 	shardConfigPath            string
 	controllerNamespace        string
 	workers                    int
-	failureRateBaseDelay       time.Duration
-	failureRateMaxDelay        time.Duration
+	failureRateBaseDelay       string
+	failureRateMaxDelay        string
 	rateLimitElementsPerSecond int
 	rateLimitElementsBurst     int
 )
@@ -50,8 +50,8 @@ func init() {
 	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
 	flag.StringVar(&controllerNamespace, "namespace", "", "Namespace the controller is deployed to.")
 	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
-	flag.DurationVar(&failureRateBaseDelay, "failure_rate_base_delay", 30*time.Millisecond, "Base delay for exponential failure backoff, milliseconds.")
-	flag.DurationVar(&failureRateMaxDelay, "failure_rate_max_delay", 1000*time.Second, "Max delay for exponential failure backoff, seconds.")
+	flag.StringVar(&failureRateBaseDelay, "failure_rate_base_delay", "30ms", "Base delay for exponential failure backoff, milliseconds.")
+	flag.StringVar(&failureRateMaxDelay, "failure_rate_max_delay", "5s", "Max delay for exponential failure backoff, seconds.")
 	flag.IntVar(&rateLimitElementsPerSecond, "rate_limit_per_second", 50, "Max number of resources to process per second.")
 	flag.IntVar(&rateLimitElementsBurst, "rate_limit_burst", 300, "Burst this number of elements before rate limit kicks in.")
 }
@@ -132,6 +132,20 @@ func main() {
 		}
 	}
 
+	backOffBaseDelay, err := time.ParseDuration(failureRateBaseDelay)
+
+	if err != nil {
+		logger.Error(err, "Invalid backoff delay value provided {backoffValue}", failureRateBaseDelay)
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	backOffMaxDelay, err := time.ParseDuration(failureRateMaxDelay)
+
+	if err != nil {
+		logger.Error(err, "Invalid backoff max value provided {failureRateMaxDelay}", failureRateMaxDelay)
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
 	controller, controllerCreationErr := NewController(
 		ctx,
 		controllerNamespace,
@@ -141,8 +155,8 @@ func main() {
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
 		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms(),
-		failureRateBaseDelay,
-		failureRateMaxDelay,
+		backOffBaseDelay,
+		backOffMaxDelay,
 		rateLimitElementsPerSecond,
 		rateLimitElementsBurst,
 	)
