@@ -198,14 +198,19 @@ func (c *Controller) handleObject(obj interface{}) {
 func NewController(
 	ctx context.Context,
 	controllerNamespace string,
-	controllerkubeclientset kubernetes.Interface,
-	controllernexusclientset clientset.Interface,
+	controllerKubeClientSet kubernetes.Interface,
+	controllerNexusClientSet clientset.Interface,
 
 	connectedShards []*shards.Shard,
 
-	controllersecretinformer coreinformers.SecretInformer,
-	controllerconfigmapinformer coreinformers.ConfigMapInformer,
-	controllermlainformer nexusinformers.MachineLearningAlgorithmInformer) (*Controller, error) {
+	controllerSecretInformer coreinformers.SecretInformer,
+	controllerConfigmapInformer coreinformers.ConfigMapInformer,
+	controllerMlaInformer nexusinformers.MachineLearningAlgorithmInformer,
+
+	failureRateBaseDelay time.Duration,
+	failureRateMaxDelay time.Duration,
+	rateLimitElementsPerSecond int,
+	rateLimitElementsBurst int) (*Controller, error) {
 	logger := klog.FromContext(ctx)
 
 	// Create event broadcaster
@@ -216,36 +221,35 @@ func NewController(
 
 	eventBroadcaster := record.NewBroadcaster(record.WithContext(ctx))
 	eventBroadcaster.StartStructuredLogging(0)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: controllerkubeclientset.CoreV1().Events(controllerNamespace)})
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: controllerKubeClientSet.CoreV1().Events(controllerNamespace)})
 
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
-	// TODO: add ratelimiter to controller config
 	ratelimiter := workqueue.NewTypedMaxOfRateLimiter(
-		workqueue.NewTypedItemExponentialFailureRateLimiter[cache.ObjectName](5*time.Millisecond, 1000*time.Second),
-		&workqueue.TypedBucketRateLimiter[cache.ObjectName]{Limiter: rate.NewLimiter(rate.Limit(50), 300)},
+		workqueue.NewTypedItemExponentialFailureRateLimiter[cache.ObjectName](failureRateBaseDelay, failureRateMaxDelay),
+		&workqueue.TypedBucketRateLimiter[cache.ObjectName]{Limiter: rate.NewLimiter(rate.Limit(rateLimitElementsPerSecond), rateLimitElementsBurst)},
 	)
 
 	controller := &Controller{
-		controllerkubeclientset:  controllerkubeclientset,
-		controllernexusclientset: controllernexusclientset,
+		controllerkubeclientset:  controllerKubeClientSet,
+		controllernexusclientset: controllerNexusClientSet,
 
 		nexusShards: connectedShards,
 
-		secretLister:  controllersecretinformer.Lister(),
-		secretsSynced: controllersecretinformer.Informer().HasSynced,
+		secretLister:  controllerSecretInformer.Lister(),
+		secretsSynced: controllerSecretInformer.Informer().HasSynced,
 
-		configMapLister:  controllerconfigmapinformer.Lister(),
-		configMapsSynced: controllerconfigmapinformer.Informer().HasSynced,
+		configMapLister:  controllerConfigmapInformer.Lister(),
+		configMapsSynced: controllerConfigmapInformer.Informer().HasSynced,
 
-		mlaLister: controllermlainformer.Lister(),
-		mlaSynced: controllermlainformer.Informer().HasSynced,
+		mlaLister: controllerMlaInformer.Lister(),
+		mlaSynced: controllerMlaInformer.Informer().HasSynced,
 		workqueue: workqueue.NewTypedRateLimitingQueue(ratelimiter),
 		recorder:  recorder,
 	}
 
 	logger.Info("Setting up event handlers")
 	// Set up an event handler for when Machine Learning Algorithm resources change
-	_, handlerErr := controllermlainformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr := controllerMlaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueMachineLearningAlgorithm,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueMachineLearningAlgorithm(new)
@@ -264,7 +268,7 @@ func NewController(
 	// handler will lookup the owner of the given Secret, and if it is
 	// owned by a MachineLearningAlgorithm resource then the handler will enqueue that
 	// MachineLearningAlgorithm resource for processing.
-	_, handlerErr = controllersecretinformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr = controllerSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.handleObject,
 		UpdateFunc: func(old, new interface{}) {
 			newSecret := new.(*corev1.Secret)
@@ -287,7 +291,7 @@ func NewController(
 	// handler will lookup the owner of the given ConfigMap, and if it is
 	// owned by a MachineLearningAlgorithm resource then the handler will enqueue that
 	// MachineLearningAlgorithm resource for processing.
-	_, handlerErr = controllerconfigmapinformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr = controllerConfigmapInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.handleObject,
 		UpdateFunc: func(old, new interface{}) {
 			newConfigMap := new.(*corev1.ConfigMap)

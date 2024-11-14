@@ -33,19 +33,27 @@ import (
 )
 
 var (
-	alias                string
-	controllerconfigpath string
-	shardconfigpath      string
-	controllerns         string
-	workers              int
+	alias                      string
+	controllerConfigPath       string
+	shardConfigPath            string
+	controllerNamespace        string
+	workers                    int
+	failureRateBaseDelay       string
+	failureRateMaxDelay        string
+	rateLimitElementsPerSecond int
+	rateLimitElementsBurst     int
 )
 
 func init() {
-	flag.StringVar(&shardconfigpath, "shards_cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
-	flag.StringVar(&controllerconfigpath, "controller_cfg", "", "Path to a kubeconfig file for the controller cluster.")
+	flag.StringVar(&shardConfigPath, "shards_cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
+	flag.StringVar(&controllerConfigPath, "controller_cfg", "", "Path to a kubeconfig file for the controller cluster.")
 	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
-	flag.StringVar(&controllerns, "namespace", "", "Namespace the controller is deployed to.")
+	flag.StringVar(&controllerNamespace, "namespace", "", "Namespace the controller is deployed to.")
 	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
+	flag.StringVar(&failureRateBaseDelay, "failure_rate_base_delay", "30ms", "Base delay for exponential failure backoff, milliseconds.")
+	flag.StringVar(&failureRateMaxDelay, "failure_rate_max_delay", "5s", "Max delay for exponential failure backoff, seconds.")
+	flag.IntVar(&rateLimitElementsPerSecond, "rate_limit_per_second", 50, "Max number of resources to process per second.")
+	flag.IntVar(&rateLimitElementsBurst, "rate_limit_burst", 300, "Burst this number of elements before rate limit kicks in.")
 }
 
 func main() {
@@ -56,7 +64,7 @@ func main() {
 	ctx := signals.SetupSignalHandler()
 	logger := klog.FromContext(ctx)
 
-	controllerCfg, err := clientcmd.BuildConfigFromFlags("", controllerconfigpath)
+	controllerCfg, err := clientcmd.BuildConfigFromFlags("", controllerConfigPath)
 	if err != nil {
 		logger.Error(err, "Error building in-cluster kubeconfig for the controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -74,10 +82,10 @@ func main() {
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(controllerns))
-	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(controllerns))
+	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(controllerNamespace))
+	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(controllerNamespace))
 
-	files, err := os.ReadDir(shardconfigpath)
+	files, err := os.ReadDir(shardConfigPath)
 	if err != nil {
 		logger.Error(err, "Error opening kubeconfig files for Shards")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -89,7 +97,7 @@ func main() {
 		if strings.HasSuffix(file.Name(), ".kubeconfig") {
 			logger.Info("Loading Shard kubeconfig file", "file", file.Name())
 
-			cfg, err := clientcmd.BuildConfigFromFlags("", path.Join(shardconfigpath, file.Name()))
+			cfg, err := clientcmd.BuildConfigFromFlags("", path.Join(shardConfigPath, file.Name()))
 			if err != nil {
 				logger.Error(err, "Error building kubeconfig for shard {shard}", file.Name())
 				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -107,8 +115,8 @@ func main() {
 				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 			}
 
-			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, time.Second*30, kubeinformers.WithNamespace(controllerns))
-			shardNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(nexusClient, time.Second*30, informers.WithNamespace(controllerns))
+			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, time.Second*30, kubeinformers.WithNamespace(controllerNamespace))
+			shardNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(nexusClient, time.Second*30, informers.WithNamespace(controllerNamespace))
 
 			connectedShards = append(connectedShards, shards.NewShard(
 				alias,
@@ -124,15 +132,34 @@ func main() {
 		}
 	}
 
+	backOffBaseDelay, err := time.ParseDuration(failureRateBaseDelay)
+
+	if err != nil {
+		logger.Error(err, "Invalid backoff delay value provided {backoffValue}", failureRateBaseDelay)
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	backOffMaxDelay, err := time.ParseDuration(failureRateMaxDelay)
+
+	if err != nil {
+		logger.Error(err, "Invalid backoff max value provided {failureRateMaxDelay}", failureRateMaxDelay)
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
 	controller, controllerCreationErr := NewController(
 		ctx,
-		controllerns,
+		controllerNamespace,
 		controllerClient,
 		controllerNexusClient,
 		connectedShards,
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
-		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms())
+		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms(),
+		backOffBaseDelay,
+		backOffMaxDelay,
+		rateLimitElementsPerSecond,
+		rateLimitElementsBurst,
+	)
 
 	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
 	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.

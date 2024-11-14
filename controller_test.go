@@ -409,7 +409,12 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 		shards,
 		controllerKubeInf.Core().V1().Secrets(),
 		controllerKubeInf.Core().V1().ConfigMaps(),
-		controllerNexusInf.Science().V1().MachineLearningAlgorithms())
+		controllerNexusInf.Science().V1().MachineLearningAlgorithms(),
+		30*time.Millisecond,
+		5*time.Second,
+		50,
+		300,
+	)
 
 	c.mlaSynced = alwaysReady
 	c.secretsSynced = alwaysReady

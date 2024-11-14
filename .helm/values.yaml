@@ -152,3 +152,15 @@ controller:
   
   # Number of worker threads to use for the processing queue
   workers: 10
+  
+  # Failure backoff base delay. Example values: 5ms, 5s
+  backOffBaseDelay: 30ms
+  
+  # Failure backoff max delay. Example values: 5s, 1m
+  backOffMaxDelay: 5s
+  
+  # Rate limit elements per second
+  rateLimitElementsPerSecond: 50
+  
+  # Rate limit burst elements
+  rateLimitElementsBurst: 300  
