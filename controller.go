@@ -367,7 +367,7 @@ func (c *Controller) reportShardCondition(mla *v1.MachineLearningAlgorithm, shar
 	var shardCondition *metav1.Condition
 
 	if syncError != "" {
-		shardCondition = v1.NewShardSyncedCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Errors occured while syncing to shard %q, details %q", shardName, syncError))
+		shardCondition = v1.NewShardSyncedCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Errors occurred while syncing to shard %q, details: %s", shardName, syncError))
 	} else {
 		shardCondition = v1.NewShardSyncedCondition(metav1.Now(), metav1.ConditionTrue, fmt.Sprintf("Shard %q ready", shardName))
 	}
