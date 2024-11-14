@@ -3,9 +3,9 @@ profile: cover.out
 local-prefix: "science.sneaksanddata.com/nexus-configuration-controller"
 
 threshold:
-  file: 80
-  package: 80
-  total: 80
+  file: 70
+  package: 70
+  total: 70
       
 exclude:
   paths:

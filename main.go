@@ -40,6 +40,14 @@ var (
 	workers              int
 )
 
+func init() {
+	flag.StringVar(&shardconfigpath, "shards_cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
+	flag.StringVar(&controllerconfigpath, "controller_cfg", "", "Path to a kubeconfig file for the controller cluster.")
+	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
+	flag.StringVar(&controllerns, "namespace", "", "Namespace the controller is deployed to.")
+	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
+}
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
@@ -66,8 +74,8 @@ func main() {
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactory(controllerClient, time.Second*30)
-	controllerNexusInformerFactory := informers.NewSharedInformerFactory(controllerNexusClient, time.Second*30)
+	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(controllerns))
+	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(controllerns))
 
 	files, err := os.ReadDir(shardconfigpath)
 	if err != nil {
@@ -99,11 +107,8 @@ func main() {
 				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 			}
 
-			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
-			shardNexusInformerFactory := informers.NewSharedInformerFactory(nexusClient, time.Second*30)
-
-			shardKubeInformerFactory.Start(ctx.Done())
-			shardNexusInformerFactory.Start(ctx.Done())
+			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, time.Second*30, kubeinformers.WithNamespace(controllerns))
+			shardNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(nexusClient, time.Second*30, informers.WithNamespace(controllerns))
 
 			connectedShards = append(connectedShards, shards.NewShard(
 				alias,
@@ -113,13 +118,11 @@ func main() {
 				shardNexusInformerFactory.Science().V1().MachineLearningAlgorithms(),
 				shardKubeInformerFactory.Core().V1().Secrets(),
 				shardKubeInformerFactory.Core().V1().ConfigMaps()))
+
+			shardKubeInformerFactory.Start(ctx.Done())
+			shardNexusInformerFactory.Start(ctx.Done())
 		}
 	}
-
-	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
-	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
-	controllerKubeInformerFactory.Start(ctx.Done())
-	controllerNexusInformerFactory.Start(ctx.Done())
 
 	controller, controllerCreationErr := NewController(
 		ctx,
@@ -131,6 +134,11 @@ func main() {
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
 		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms())
 
+	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
+	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
+	controllerKubeInformerFactory.Start(ctx.Done())
+	controllerNexusInformerFactory.Start(ctx.Done())
+
 	if controllerCreationErr != nil {
 		logger.Error(controllerCreationErr, "Error creating a controller instance")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -140,12 +148,4 @@ func main() {
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-}
-
-func init() {
-	flag.StringVar(&shardconfigpath, "shardscfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
-	flag.StringVar(&controllerconfigpath, "controllercfg", "", "Path to a kubeconfig file for the controller cluster.")
-	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
-	flag.StringVar(&controllerns, "namespace", "", "Namespace the controller is deployed to.")
-	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
 }

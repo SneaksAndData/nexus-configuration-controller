@@ -68,7 +68,7 @@ const (
 	// is synced successfully
 	MessageResourceSynced = "Machine Learning Algorithm synced successfully"
 	// MessageResourceMissing is the message used for an Event fired when a MachineLearningAlgorithm references a missing Secret or a ConfigMap
-	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm is missing in the controller cluster"
+	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm %q is missing in the controller cluster"
 	MessageResourceSkipped = "Resource %q skipped, controller launched in dev mode"
 	// FieldManager distinguishes this controller from other things writing to API objects
 	FieldManager = controllerAgentName
@@ -137,7 +137,6 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 			return
 		} else {
 			c.workqueue.Add(objectRef)
-			return
 		}
 	default:
 		utilruntime.HandleError(fmt.Errorf("unsupported type passed into work queue: %s", ot))
@@ -176,6 +175,7 @@ func (c *Controller) handleObject(obj interface{}) {
 		}
 		logger.V(4).Info("Recovered deleted object", "resourceName", object.GetName())
 	}
+
 	logger.V(4).Info("Processing object", "object", klog.KObj(object))
 	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
 		// If this object is not owned by a MachineLearningAlgorithm, skip it
@@ -185,7 +185,7 @@ func (c *Controller) handleObject(obj interface{}) {
 
 		mla, err := c.mlaLister.MachineLearningAlgorithms(object.GetNamespace()).Get(ownerRef.Name)
 		if err != nil {
-			logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "foo", ownerRef.Name)
+			logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
 			return
 		}
 
@@ -411,7 +411,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 		secret, err := c.secretLister.Secrets(secretNamespace).Get(secretName)
 		// If the referenced Secret resource doesn't exist in the cluster where the controller is deployed, update the syncErr and move on to the next Secret
 		if k8serrors.IsNotFound(err) {
-			msg := fmt.Sprintf(MessageResourceMissing, controllerMla.Name)
+			msg := fmt.Sprintf(MessageResourceMissing, secretName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("Secret not found", "secretName", secretName, "shard", shard.Name)
 			syncErr = errors.Join(syncErr, err)
@@ -466,7 +466,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 		configMap, err := c.configMapLister.ConfigMaps(configMapNamespace).Get(configMapName)
 		// If the referenced ConfigMap resource doesn't exist in the cluster where the controller is deployed, update syncErr and move on to the next ConfigMap
 		if k8serrors.IsNotFound(err) {
-			msg := fmt.Sprintf(MessageResourceMissing, controllerMla.Name)
+			msg := fmt.Sprintf(MessageResourceMissing, configMapName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("ConfigMap not found", "configMapName", configMapName, "shard", shard.Name)
 			syncErr = errors.Join(syncErr, err)
@@ -521,6 +521,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "objectRef", objectRef)
 
 	// Get the MachineLearningAlgorithm resource with this namespace/name
+	logger.V(4).Info(fmt.Sprintf("Syncing algorithm %s", objectRef.Name))
 	mla, err := c.mlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
 	if err != nil {
 		// The MachineLearningAlgorithm resource may no longer exist, in which case we stop
@@ -532,39 +533,41 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 
 		return err
 	}
-
-	// local test only - test specific mla
-	//if objectRef.Name != "omni-channel-crystal-solver-controller" {
-	//	c.recorder.Event(mla, corev1.EventTypeWarning, SuccessSkipped, MessageResourceSkipped)
-	//	return nil
-	//}
+	// TODO: must add itself to owners of all referenced secrets and configmaps, so those can be synchronised as well
 
 	// sync MachineLearningAlgorithm, Secrets and ConfigMaps referenced by it
 	syncErrors := map[string]*SyncError{}
 
 	for _, shard := range c.nexusShards {
-		shardMla, err := shard.MlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
-		// if MachineLearningAlgorithm has not been created yet, create a new one in this shard
-		if k8serrors.IsNotFound(err) {
-			shardMla, err = shard.CreateMachineLearningAlgorithm(mla, FieldManager)
-		}
+		logger.V(4).Info(fmt.Sprintf("Syncing to shard %s", shard.Name))
+		shardMla, shardErr := shard.MlaLister.MachineLearningAlgorithms(objectRef.Namespace).Get(objectRef.Name)
 
-		// requeue on error
-		if err != nil {
-			return err
-		}
-
-		// update this MLA in case it drifted
-		if !reflect.DeepEqual(shardMla.Spec, mla.Spec) {
+		// update this MLA in case it exists and has drifted
+		if shardErr == nil && !reflect.DeepEqual(shardMla.Spec, mla.Spec) {
 			logger.V(4).Info(fmt.Sprintf("Content changed for MachineLearningAlgorithm %s, updating", mla.Name))
-			shardMla, err = shard.UpdateMachineLearningAlgorithm(mla, FieldManager)
+			shardMla, shardErr = shard.UpdateMachineLearningAlgorithm(shardMla, mla.Spec, FieldManager)
 			// requeue on error
-			if err != nil {
-				return err
+			if shardErr != nil {
+				return shardErr
 			}
 		}
 
+		// if MachineLearningAlgorithm has not been created yet, create a new one in this shard
+		if k8serrors.IsNotFound(shardErr) {
+			logger.V(4).Info(fmt.Sprintf("Algorithm %s not found in shard %s, creating", objectRef.Name, shard.Name))
+			shardMla, shardErr = shard.CreateMachineLearningAlgorithm(mla.Name, mla.Namespace, mla.Spec, FieldManager)
+		}
+
+		// requeue on error
+		if shardErr != nil {
+			logger.V(4).Error(shardErr, fmt.Sprintf("Error processing algorithm resource on shard %s", shard.Name))
+			return shardErr
+		}
+
+		logger.V(4).Info(fmt.Sprintf("Syncing secrets to shard %s", shard.Name))
 		secretSyncErr := c.syncSecretsToShard(mla.Namespace, mla, shardMla, shard, &logger)
+
+		logger.V(4).Info(fmt.Sprintf("Syncing configmaps to shard %s", shard.Name))
 		configMapSyncErr := c.syncConfigMapsToShard(mla.Namespace, mla, shardMla, shard, &logger)
 		// in case secrets were not synced successfully, save the error for Status update later
 		// for this Shard and move on to the next
@@ -583,6 +586,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 			mergedSyncErrors[shardName] = syncErr.merged()
 		}
 	}
+	logger.V(4).Info(fmt.Sprintf("Synced all shards, updating status for %s", mla.Name))
 	err = c.updateMachineLearningAlgorithmStatus(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames(), mergedSyncErrors)
 	if err != nil {
 		return err
@@ -613,11 +617,13 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 	if ok := cache.WaitForCacheSync(ctx.Done(), c.secretsSynced, c.configMapsSynced, c.mlaSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
+	logger.Info("Controller informers synced")
 	for _, shard := range c.nexusShards {
 		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.MlaSynced); !ok {
 			return fmt.Errorf("failed to wait for shard %s caches to sync", shard.Name)
 		}
 	}
+	logger.Info("Shard informers synced")
 
 	logger.Info("Starting workers", "count", workers)
 	// Launch workers to process MachineLearningAlgorithm resources

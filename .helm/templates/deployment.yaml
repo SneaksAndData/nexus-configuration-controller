@@ -39,11 +39,16 @@ spec:
       containers:
         - name: ncc
           args:
-            - "--shardscfg=/app/config/shards"
-            - "--controllercfg={{ .Values.controller.shardsConfigPath }}"
-            - "--alias={{ .Values.controller.alias }}"
-            - "--controllerns={{ .Values.controller.namespace }}"
-            - "--workers={{ .Values.controller.workers }}" 
+            - "--shards_cfg"
+            - "{{ .Values.controller.shardsConfigPath }}"
+            - "--alias"
+            - "{{ .Values.controller.alias }}"
+            - "--namespace"
+            - "{{ .Values.controller.namespace }}"
+            - "--workers"
+            - "{{ .Values.controller.workers }}"
+            - "--v"
+            - "4"
         {{- with .Values.securityContext }}
           securityContext:
           {{- toYaml . | nindent 12 }}

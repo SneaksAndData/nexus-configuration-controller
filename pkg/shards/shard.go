@@ -84,33 +84,26 @@ func (shard *Shard) GetReferenceLabels() map[string]string {
 	}
 }
 
-func (shard *Shard) CreateMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
+func (shard *Shard) CreateMachineLearningAlgorithm(mlaName string, mlaNamespace string, mlaSpec v1.MachineLearningAlgorithmSpec, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
 	newMla := &v1.MachineLearningAlgorithm{
 		TypeMeta: metav1.TypeMeta{APIVersion: v1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      mla.Name,
-			Namespace: mla.Namespace,
+			Name:      mlaName,
+			Namespace: mlaNamespace,
 			Labels:    shard.GetReferenceLabels(),
 		},
-		Spec: mla.Spec,
+		Spec: *mlaSpec.DeepCopy(),
 	}
 
-	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).Create(context.TODO(), newMla, metav1.CreateOptions{FieldManager: fieldManager})
+	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mlaNamespace).Create(context.TODO(), newMla, metav1.CreateOptions{FieldManager: fieldManager})
 }
 
 // UpdateMachineLearningAlgorithm updates the MLA in this shard in case it drifts from the one in the controller cluster
-func (shard *Shard) UpdateMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
-	newMla := &v1.MachineLearningAlgorithm{
-		TypeMeta: metav1.TypeMeta{APIVersion: v1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      mla.Name,
-			Namespace: mla.Namespace,
-			Labels:    shard.GetReferenceLabels(),
-		},
-		Spec: *mla.Spec.DeepCopy(),
-	}
+func (shard *Shard) UpdateMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm, mlaSpec v1.MachineLearningAlgorithmSpec, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
+	newMla := mla.DeepCopy()
+	newMla.Spec = *mlaSpec.DeepCopy()
 
-	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).Update(context.TODO(), newMla, metav1.UpdateOptions{FieldManager: fieldManager})
+	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(newMla.Namespace).Update(context.TODO(), newMla, metav1.UpdateOptions{FieldManager: fieldManager})
 }
 
 // CreateSecret creates a new Secret for a MachineLearningAlgorithm resource. It also sets

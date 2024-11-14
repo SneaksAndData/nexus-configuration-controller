@@ -37,15 +37,15 @@ type MachineLearningAlgorithm struct {
 type MachineLearningAlgorithmSpec struct {
 	ImageRegistry        string                 `json:"imageRegistry"`
 	ImageRepository      string                 `json:"imageRepository"`
-	ImageTag             string                 `json:"ImageTag"`
+	ImageTag             string                 `json:"imageTag"`
 	DeadlineSeconds      *int32                 `json:"deadlineSeconds,omitempty"`
 	MaximumRetries       *int32                 `json:"maximumRetries,omitempty"`
 	Env                  []corev1.EnvVar        `json:"env,omitempty"`
 	EnvFrom              []corev1.EnvFromSource `json:"envFrom,omitempty"`
 	CpuLimit             string                 `json:"cpuLimit"`
 	MemoryLimit          string                 `json:"memoryLimit"`
-	WorkgroupHost        string                 `json:"WorkgroupHost"`
-	Workgroup            string                 `json:"Workgroup"`
+	WorkgroupHost        string                 `json:"workgroupHost"`
+	Workgroup            string                 `json:"workgroup"`
 	AdditionalWorkgroups map[string]string      `json:"additionalWorkgroups,omitempty"`
 	MonitoringParameters []string               `json:"monitoringParameters,omitempty"`
 	CustomResources      map[string]string      `json:"customResources,omitempty"`
@@ -59,12 +59,17 @@ type MachineLearningAlgorithmSpec struct {
 
 // MachineLearningAlgorithmStatus is the status for a MachineLearningAlgorithm resource
 type MachineLearningAlgorithmStatus struct {
-	LastUpdatedTimestamp metav1.Time       `json:"lastUpdatedTimestamp"`
+	LastUpdatedTimestamp metav1.Time `json:"lastUpdatedTimestamp"`
+	// TODO: add synced secrets/configmaps to conditions:
+	// all secrets sync
+	// all configs sync
+	// ready
 	SyncedSecrets        []string          `json:"syncedSecrets,omitempty"`
 	SyncedConfigurations []string          `json:"syncedConfigurations,omitempty"`
 	SyncedToClusters     []string          `json:"syncedToClusters,omitempty"`
 	State                string            `json:"state"`
 	SyncErrors           map[string]string `json:"syncErrors,omitempty"`
+	//Conditions           []corev1.ConditionStatus `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -78,10 +83,16 @@ type MachineLearningAlgorithmList struct {
 }
 
 func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
-	subset := make([]string, 0, len(mla.Spec.EnvFrom))
+	subset := []string{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.SecretRef != nil {
 			subset = append(subset, ref.SecretRef.Name)
+		}
+	}
+
+	for _, ref := range mla.Spec.Env {
+		if ref.ValueFrom != nil && ref.ValueFrom.SecretKeyRef != nil {
+			subset = append(subset, ref.ValueFrom.SecretKeyRef.Name)
 		}
 	}
 
@@ -89,10 +100,16 @@ func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
 }
 
 func (mla *MachineLearningAlgorithm) GetConfigMapNames() []string {
-	subset := make([]string, 0, len(mla.Spec.EnvFrom))
+	subset := []string{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.ConfigMapRef != nil {
 			subset = append(subset, ref.ConfigMapRef.Name)
+		}
+	}
+
+	for _, ref := range mla.Spec.Env {
+		if ref.ValueFrom != nil && ref.ValueFrom.ConfigMapKeyRef != nil {
+			subset = append(subset, ref.ValueFrom.ConfigMapKeyRef.Name)
 		}
 	}
 
