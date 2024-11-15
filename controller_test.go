@@ -662,35 +662,53 @@ func TestHandlesNotExistingResource(t *testing.T) {
 }
 
 // TestSkipsInvalidMla tests that resource creation is skipped with a status update in case referenced configurations do not exist
-//func TestSkipsInvalidMla(t *testing.T) {
-//	f := newFixture(t)
-//	mlaSecret := newSecret("test-secret", nil)
-//	mlaConfigMap := newConfigMap("test-config", nil)
-//	mla := newMla("test", mlaSecret, mlaConfigMap, false)
-//	_, ctx := ktesting.NewTestContext(t)
-//
-//	f = f.configure(
-//		&ControllerFixture{
-//			mlaListResults: []*nexuscontroller.MachineLearningAlgorithm{mla},
-//
-//			secretListResults:    []*corev1.Secret{},
-//			configMapListResults: []*corev1.ConfigMap{},
-//			existingCoreObjects:  []runtime.Object{},
-//			existingMlaObjects:   []runtime.Object{mla},
-//		},
-//		&NexusFixture{},
-//	)
-//
-//	f.expectControllerUpdateMlaStatusAction(expectedMlaWithErrors(mla, mlaSecret, mlaConfigMap, map[string]string{"shard0": "secret \"test-secret\" not found\nconfigmap \"test-config\" not found"}))
-//	f.expectShardActions(
-//		expectedShardMla(mla, ""),
-//		nil,
-//		nil,
-//		false)
-//
-//	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
-//	t.Log("Controller skipped a misconfigured Mla resource")
-//}
+func TestSkipsInvalidMla(t *testing.T) {
+	f := newFixture(t)
+	mlaSecret := newSecret("test-secret", nil)
+	mlaConfigMap := newConfigMap("test-config", nil)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			mlaListResults: []*nexuscontroller.MachineLearningAlgorithm{mla},
+
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingMlaObjects:   []runtime.Object{mla},
+		},
+		&NexusFixture{},
+	)
+
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Errors occurred while syncing to shard \"shard0\", details: secret \"test-secret\" not found\nconfigmap \"test-config\" not found",
+		),
+	}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Errors occurred while syncing to shard \"shard0\", details: secret \"test-secret\" not found\nconfigmap \"test-config\" not found",
+		),
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Algorithm \"test\" failed synchronisation",
+		),
+	}))
+	f.expectShardActions(
+		expectedShardMla(mla, ""),
+		nil,
+		nil,
+		false)
+
+	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
+	t.Log("Controller skipped a misconfigured Mla resource")
+}
 
 // TestUpdatesMlaSecretAndConfig test that update to a secret referenced by the MLA is propagated to shard clusters
 func TestUpdatesMlaSecretAndConfig(t *testing.T) {
@@ -742,7 +760,24 @@ func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 		},
 	)
 
-	f.expectedUpdateActions(expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated, []metav1.Condition{}), mlaOnShard, mlaSecretOnShardUpdated, mlaConfigMapOnShardUpdated)
+	f.expectedUpdateActions(expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Shard \"shard0\" ready",
+		),
+	}), mlaOnShard, mlaSecretOnShardUpdated, mlaConfigMapOnShardUpdated)
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Shard \"shard0\" ready",
+		), *nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Algorithm \"test\" ready",
+		),
+	}))
 
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully updated a Secret and a ConfigMap in the shard cluster after those were updated in the controller cluster")
@@ -778,7 +813,23 @@ func TestCreatesSharedResources(t *testing.T) {
 			existingMlaObjects:   []runtime.Object{mlaOnShard1},
 		},
 	)
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, mlaSecret, mlaConfigMap, []metav1.Condition{}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, mlaSecret, mlaConfigMap, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Shard \"shard0\" ready",
+		)}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, mlaSecret, mlaConfigMap, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Shard \"shard0\" ready",
+		), *nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Algorithm \"test2\" ready",
+		),
+	}))
 	f.expectShardActions(expectedShardMla(mla2, ""), nil, nil, false)
 	f.expectOwnershipUpdateActions(
 		expectedShardSecret(mlaSecretOnShard1, []*nexuscontroller.MachineLearningAlgorithm{mlaOnShard1, expectedShardMla(mla2, "")}),
@@ -813,7 +864,23 @@ func TestTakesOwnership(t *testing.T) {
 		},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []metav1.Condition{}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Shard \"shard0\" ready",
+		)}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []metav1.Condition{
+		*nexuscontroller.NewShardSyncedCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Shard \"shard0\" ready",
+		), *nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Algorithm \"test\" ready",
+		),
+	}))
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
