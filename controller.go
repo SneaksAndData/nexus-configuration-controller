@@ -603,7 +603,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	logger.V(4).Info(fmt.Sprintf("Synced all shards, updating status for %s", mla.Name))
 	mla, err = c.reportMlaCondition(mla, mla.GetSecretNames(), mla.GetConfigMapNames())
 	if err != nil {
-		logger.V(4).Error(err, fmt.Sprint("Error setting ready status condition"))
+		logger.V(4).Error(err, "Error setting ready status condition")
 		return err
 	}
 	if mla.HasErrors() {
