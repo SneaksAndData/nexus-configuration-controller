@@ -109,6 +109,10 @@ func (mla *MachineLearningAlgorithm) FirstError() string {
 	return ""
 }
 
+func (mla *MachineLearningAlgorithm) ResetStatus() {
+	mla.Status = MachineLearningAlgorithmStatus{}
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // MachineLearningAlgorithmList is a list of MachineLearningAlgorithm resources

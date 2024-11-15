@@ -541,6 +541,8 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		return err
 	}
 	// TODO: must add itself to owners of all referenced secrets and configmaps, so those can be synchronised as well
+	// reset Mla status before we proceed, since it is updated incrementally
+	mla.ResetStatus()
 
 	for _, shard := range c.nexusShards {
 		logger.V(4).Info(fmt.Sprintf("Syncing to shard %s", shard.Name))
