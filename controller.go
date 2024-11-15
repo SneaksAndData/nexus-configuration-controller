@@ -391,15 +391,6 @@ func (c *Controller) reportMlaCondition(mla *v1.MachineLearningAlgorithm, update
 	return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
 }
 
-// shardNames returns names of all Shards operated by the controller
-func (c *Controller) shardNames() []string {
-	result := make([]string, 0, len(c.nexusShards))
-	for _, shard := range c.nexusShards {
-		result = append(result, shard.Name)
-	}
-	return result
-}
-
 // isMissingOwnership checks if the resource is controlled by this MachineLearningAlgorithm resource,
 // and if not AND the resource is not owned by any other MachineLearningAlgorithm, logs a warning to the event recorder and returns error msg.
 func (c *Controller) isMissingOwnership(obj metav1.Object, owner metav1.Object) (bool, error) {
