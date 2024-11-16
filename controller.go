@@ -358,15 +358,18 @@ func (c *Controller) reportMlaSyncedCondition(mla *v1.MachineLearningAlgorithm, 
 	mlaCopy := mla.DeepCopy()
 	// update conditions if changed
 	// later if multiple conditions are introduced this should compare possible sets of conditions to one another
-	newCondition := *v1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, fmt.Sprintf("Algorithm %q ready", mla.Name))
-	if mlaCopy.Status.Conditions[0].Status != newCondition.Status || mlaCopy.Status.Conditions[0].Message != newCondition.Message {
-		mlaCopy.Status.Conditions[0] = newCondition
-	}
+	// set time to prev instance first so DeepEqual can be used
+	newCondition := *v1.NewResourceReadyCondition(mlaCopy.Status.Conditions[0].LastTransitionTime, metav1.ConditionTrue, fmt.Sprintf("Algorithm %q ready", mla.Name))
+	mlaCopy.Status.Conditions[0] = newCondition
 	mlaCopy.Status.SyncedSecrets = updatedSecrets
 	mlaCopy.Status.SyncedConfigurations = updatedConfigMaps
 	mlaCopy.Status.SyncedToClusters = shards
+	if !reflect.DeepEqual(mla.Status, mlaCopy.Status) {
+		mlaCopy.Status.Conditions[0].LastTransitionTime = metav1.Now()
+		return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
+	}
 
-	return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
+	return mla, nil
 }
 
 // isMissingOwnership checks if the resource is controlled by this MachineLearningAlgorithm resource,
