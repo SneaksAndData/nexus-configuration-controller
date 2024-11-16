@@ -57,17 +57,6 @@ type MachineLearningAlgorithmSpec struct {
 	MountDatadogSocket   bool                   `json:"mountDatadogSocket,omitempty"`
 }
 
-// NewShardSyncedCondition creates a new condition indicating a secret synchronisation success or failure
-func NewShardSyncedCondition(transitionTime metav1.Time, status metav1.ConditionStatus, message string) *metav1.Condition {
-	return &metav1.Condition{
-		LastTransitionTime: transitionTime,
-		Type:               "ShardInitialized",
-		Status:             status,
-		Reason:             "ShardSyncInProgress",
-		Message:            message,
-	}
-}
-
 // NewResourceReadyCondition creates a new condition indicating an overall Mla synchronisation success or failure
 func NewResourceReadyCondition(transitionTime metav1.Time, status metav1.ConditionStatus, message string) *metav1.Condition {
 	return &metav1.Condition{
@@ -85,32 +74,6 @@ type MachineLearningAlgorithmStatus struct {
 	SyncedConfigurations []string           `json:"syncedConfigurations,omitempty"`
 	SyncedToClusters     []string           `json:"syncedToClusters,omitempty"`
 	Conditions           []metav1.Condition `json:"conditions,omitempty"`
-}
-
-// HasErrors checks if this MachineLearningAlgorithm has any errors when syncing to shards
-func (mla *MachineLearningAlgorithm) HasErrors() bool {
-	for _, condition := range mla.Status.Conditions {
-		if condition.Status == metav1.ConditionFalse {
-			return true
-		}
-	}
-
-	return false
-}
-
-// FirstError returns error message from the first False condition for this MachineLearningAlgorithm
-func (mla *MachineLearningAlgorithm) FirstError() string {
-	for _, condition := range mla.Status.Conditions {
-		if condition.Status == metav1.ConditionFalse {
-			return condition.Message
-		}
-	}
-
-	return ""
-}
-
-func (mla *MachineLearningAlgorithm) ResetStatus() {
-	mla.Status = MachineLearningAlgorithmStatus{}
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
