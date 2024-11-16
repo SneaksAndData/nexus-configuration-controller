@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
@@ -38,7 +37,6 @@ import (
 	v1 "science.sneaksanddata.com/nexus-configuration-controller/pkg/apis/science/v1"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned/scheme"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
-	"strings"
 	"time"
 
 	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
@@ -58,6 +56,8 @@ const (
 	// ErrResourceMissing is used as part of the Event 'reason' when a MachineLearningAlgorithm fails
 	// to sync due to a Secret or a ConfigMap referenced by it is missing from the controller cluster
 	ErrResourceMissing = "ErrResourceMissing"
+	// ErrResourceSyncError is used when a secret/configmap fails to sync with a fatal exception
+	ErrResourceSyncError = "ErrResourceSyncError"
 	// SuccessSkipped is used as part of the Event 'reason' when a MachineLearningAlgorithm is skipped from processing
 	SuccessSkipped = "Skipped"
 
@@ -69,7 +69,9 @@ const (
 	MessageResourceSynced = "Machine Learning Algorithm synced successfully"
 	// MessageResourceMissing is the message used for an Event fired when a MachineLearningAlgorithm references a missing Secret or a ConfigMap
 	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm %q is missing in the controller cluster"
-	MessageResourceSkipped = "Resource %q skipped, controller launched in dev mode"
+	// MessageResourceOperationFailed is the message used for an Event fired in case of fatal exceptions occurring during Secret/Configmap sync
+	MessageResourceOperationFailed = "Synchronization of a resource %q referenced by MachineLearningAlgorithm %q failed with a fatal error %s"
+	MessageResourceSkipped         = "Resource %q skipped, controller launched in dev mode"
 	// FieldManager distinguishes this controller from other things writing to API objects
 	FieldManager = controllerAgentName
 )
@@ -104,27 +106,6 @@ type Controller struct {
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
-}
-
-type SyncError struct {
-	failedSecretError    error
-	failedConfigMapError error
-}
-
-func (se *SyncError) isEmpty() bool {
-	return se.failedSecretError == nil && se.failedConfigMapError == nil
-}
-
-func (se *SyncError) merged() string {
-	var sb strings.Builder
-	if se.failedSecretError != nil {
-		sb.WriteString(se.failedSecretError.Error())
-		sb.WriteString("\n")
-	}
-	if se.failedConfigMapError != nil {
-		sb.WriteString(se.failedConfigMapError.Error())
-	}
-	return sb.String()
 }
 
 // enqueueMachineLearningAlgorithm takes a MachineLearningAlgorithm resource and converts it into a namespace/name
@@ -361,31 +342,34 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	return true
 }
 
-func (c *Controller) updateMachineLearningAlgorithmStatus(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string, receivedBy []string, syncErrors map[string]string) error {
+func (c *Controller) reportMlaInitCondition(mla *v1.MachineLearningAlgorithm) (*v1.MachineLearningAlgorithm, error) {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	mlaCopy := mla.DeepCopy()
-	if len(syncErrors) > 0 {
-		mlaCopy.Status.State = "Failed"
-	} else {
-		mlaCopy.Status.State = "Ready"
+	// init condition is only assigned to new resources
+	if len(mlaCopy.Status.Conditions) == 0 {
+		mlaCopy.Status.Conditions = []metav1.Condition{*v1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Algorithm %q initializing", mla.Name))}
+		return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
 	}
-	mlaCopy.Status.LastUpdatedTimestamp = metav1.Now()
-	mlaCopy.Status.SyncedSecrets = updatedSecrets
-	mlaCopy.Status.SyncedConfigurations = updatedConfigMaps
-	mlaCopy.Status.SyncedToClusters = receivedBy
-	mlaCopy.Status.SyncErrors = syncErrors
-
-	_, err := c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
-	return err
+	return mla, nil
 }
 
-// shardNames returns names of all Shards operated by the controller
-func (c *Controller) shardNames() []string {
-	result := make([]string, 0, len(c.nexusShards))
-	for _, shard := range c.nexusShards {
-		result = append(result, shard.Name)
+func (c *Controller) reportMlaSyncedCondition(mla *v1.MachineLearningAlgorithm, updatedSecrets []string, updatedConfigMaps []string, shards []string) (*v1.MachineLearningAlgorithm, error) {
+	// NEVER modify objects from the store. It's a read-only, local cache.
+	mlaCopy := mla.DeepCopy()
+	// update conditions if changed
+	// later if multiple conditions are introduced this should compare possible sets of conditions to one another
+	// set time to prev instance first so DeepEqual can be used
+	newCondition := *v1.NewResourceReadyCondition(mlaCopy.Status.Conditions[0].LastTransitionTime, metav1.ConditionTrue, fmt.Sprintf("Algorithm %q ready", mla.Name))
+	mlaCopy.Status.Conditions[0] = newCondition
+	mlaCopy.Status.SyncedSecrets = updatedSecrets
+	mlaCopy.Status.SyncedConfigurations = updatedConfigMaps
+	mlaCopy.Status.SyncedToClusters = shards
+	if !reflect.DeepEqual(mla.Status, mlaCopy.Status) {
+		mlaCopy.Status.Conditions[0].LastTransitionTime = metav1.Now()
+		return c.controllernexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).UpdateStatus(context.TODO(), mlaCopy, metav1.UpdateOptions{FieldManager: FieldManager})
 	}
-	return result
+
+	return mla, nil
 }
 
 // isMissingOwnership checks if the resource is controlled by this MachineLearningAlgorithm resource,
@@ -409,7 +393,6 @@ func (c *Controller) isMissingOwnership(obj metav1.Object, owner metav1.Object) 
 }
 
 func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v1.MachineLearningAlgorithm, shardMla *v1.MachineLearningAlgorithm, shard *shards.Shard, logger *klog.Logger) error {
-	var syncErr error = nil
 	for _, secretName := range shardMla.GetSecretNames() {
 		// Get the secret with the name specified in MachineLearningAlgorithm.spec
 		secret, err := c.secretLister.Secrets(secretNamespace).Get(secretName)
@@ -418,8 +401,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 			msg := fmt.Sprintf(MessageResourceMissing, secretName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("Secret not found", "secretName", secretName, "shard", shard.Name)
-			syncErr = errors.Join(syncErr, err)
-			continue
+			return err
 		}
 
 		shardSecret, err := shard.SecretLister.Secrets(shardMla.Namespace).Get(secret.Name)
@@ -430,13 +412,17 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 
 		// requeue on error
 		if err != nil {
-			return errors.Join(syncErr, err)
+			msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerMla.Name, err)
+			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+			return err
 		}
 
 		missingOwner, err := c.isMissingOwnership(shardSecret, shardMla)
 		// requeue on error
 		if err != nil {
-			return errors.Join(syncErr, err)
+			msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerMla.Name, err)
+			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+			return err
 		}
 
 		// if Secret data differs, update the Secret
@@ -447,7 +433,9 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 
 			// requeue on error
 			if err != nil {
-				return errors.Join(syncErr, err)
+				msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerMla.Name, err)
+				c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+				return err
 			}
 		}
 		if missingOwner {
@@ -456,15 +444,17 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 
 			// requeue on error
 			if err != nil {
-				return errors.Join(syncErr, err)
+				msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerMla.Name, err)
+				c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+				return err
 			}
 		}
 	}
-	return syncErr
+
+	return nil
 }
 
 func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controllerMla *v1.MachineLearningAlgorithm, shardMla *v1.MachineLearningAlgorithm, shard *shards.Shard, logger *klog.Logger) error {
-	var syncErr error = nil
 	for _, configMapName := range shardMla.GetConfigMapNames() {
 		// Get the ConfigMap with the name specified in MachineLearningAlgorithm.spec
 		configMap, err := c.configMapLister.ConfigMaps(configMapNamespace).Get(configMapName)
@@ -473,8 +463,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 			msg := fmt.Sprintf(MessageResourceMissing, configMapName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("ConfigMap not found", "configMapName", configMapName, "shard", shard.Name)
-			syncErr = errors.Join(syncErr, err)
-			continue
+			return err
 		}
 
 		shardConfigMap, err := shard.ConfigMapLister.ConfigMaps(shardMla.Namespace).Get(configMap.Name)
@@ -485,13 +474,17 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 
 		// requeue on error
 		if err != nil {
-			return errors.Join(syncErr, err)
+			msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerMla.Name, err)
+			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+			return err
 		}
 
 		missingOwner, err := c.isMissingOwnership(shardConfigMap, shardMla)
 		// requeue on error
 		if err != nil {
-			return errors.Join(syncErr, err)
+			msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerMla.Name, err)
+			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+			return err
 		}
 
 		// if data differs, update
@@ -501,7 +494,9 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 
 			// requeue on error
 			if err != nil {
-				return errors.Join(syncErr, err)
+				msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerMla.Name, err)
+				c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+				return err
 			}
 		}
 		// if ownership is not set yet, update it
@@ -511,11 +506,23 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 
 			// requeue on error
 			if err != nil {
-				return errors.Join(syncErr, err)
+				msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerMla.Name, err)
+				c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
+				return err
 			}
 		}
 	}
-	return syncErr
+
+	return nil
+}
+
+// shardNames returns names of all shards available for sync
+func (c *Controller) shardNames() []string {
+	result := make([]string, 0, len(c.nexusShards))
+	for _, shard := range c.nexusShards {
+		result = append(result, shard.Name)
+	}
+	return result
 }
 
 // syncHandler compares the actual state with the desired, and attempts to
@@ -537,10 +544,12 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 
 		return err
 	}
-	// TODO: must add itself to owners of all referenced secrets and configmaps, so those can be synchronised as well
 
-	// sync MachineLearningAlgorithm, Secrets and ConfigMaps referenced by it
-	syncErrors := map[string]*SyncError{}
+	mla, err = c.reportMlaInitCondition(mla)
+	// requeue in case status update fails
+	if err != nil {
+		return err
+	}
 
 	for _, shard := range c.nexusShards {
 		logger.V(4).Info(fmt.Sprintf("Syncing to shard %s", shard.Name))
@@ -569,34 +578,30 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		}
 
 		logger.V(4).Info(fmt.Sprintf("Syncing secrets to shard %s", shard.Name))
-		secretSyncErr := c.syncSecretsToShard(mla.Namespace, mla, shardMla, shard, &logger)
+		shardErr = c.syncSecretsToShard(mla.Namespace, mla, shardMla, shard, &logger)
+		// requeue on error
+		if shardErr != nil {
+			logger.V(4).Error(shardErr, fmt.Sprintf("Error syncing secrets on shard %s", shard.Name))
+			return shardErr
+		}
 
 		logger.V(4).Info(fmt.Sprintf("Syncing configmaps to shard %s", shard.Name))
-		configMapSyncErr := c.syncConfigMapsToShard(mla.Namespace, mla, shardMla, shard, &logger)
-		// in case secrets were not synced successfully, save the error for Status update later
-		// for this Shard and move on to the next
-		syncErrors[shard.Name] = &SyncError{
-			failedSecretError:    secretSyncErr,
-			failedConfigMapError: configMapSyncErr,
+		shardErr = c.syncConfigMapsToShard(mla.Namespace, mla, shardMla, shard, &logger)
+		// requeue on error
+		if shardErr != nil {
+			logger.V(4).Error(shardErr, fmt.Sprintf("Error syncing configMaps on shard %s", shard.Name))
+			return shardErr
 		}
 	}
 
 	// Finally, we update the status block of the MachineLearningAlgorithm resource in the controller cluster to reflect the
 	// current state of the world across all Shards
-	// merge sync errors for convenience
-	mergedSyncErrors := map[string]string{}
-	for shardName, syncErr := range syncErrors {
-		if !syncErr.isEmpty() {
-			mergedSyncErrors[shardName] = syncErr.merged()
-		}
-	}
-	logger.V(4).Info(fmt.Sprintf("Synced all shards, updating status for %s", mla.Name))
-	err = c.updateMachineLearningAlgorithmStatus(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames(), mergedSyncErrors)
+
+	logger.V(4).Info(fmt.Sprintf("Processed all shards, updating status for %s", mla.Name))
+	mla, err = c.reportMlaSyncedCondition(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames())
 	if err != nil {
+		logger.V(4).Error(err, "Error setting ready status condition")
 		return err
-	}
-	if len(mergedSyncErrors) > 0 {
-		return fmt.Errorf("errors occured when syncing Secrets/ConfigMaps to Shards: %v", mergedSyncErrors)
 	}
 
 	c.recorder.Event(mla, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
