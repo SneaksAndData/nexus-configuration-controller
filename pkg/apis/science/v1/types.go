@@ -63,7 +63,7 @@ func NewResourceReadyCondition(transitionTime metav1.Time, status metav1.Conditi
 		LastTransitionTime: transitionTime,
 		Type:               "Ready",
 		Status:             status,
-		Reason:             "SyncFinalized",
+		Reason:             "AlgorithmReady",
 		Message:            message,
 	}
 }
