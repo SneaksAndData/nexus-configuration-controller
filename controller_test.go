@@ -136,26 +136,19 @@ func (f *fixture) configure(controllerFixture *ControllerFixture, nexusShardFixt
 
 func int32Ptr(i int32) *int32 { return &i }
 
-func expectedMla(mla *nexuscontroller.MachineLearningAlgorithm, secret *corev1.Secret, configMap *corev1.ConfigMap) *nexuscontroller.MachineLearningAlgorithm {
+func expectedMla(mla *nexuscontroller.MachineLearningAlgorithm, secret *corev1.Secret, configMap *corev1.ConfigMap, syncedTo []string, conditions []metav1.Condition) *nexuscontroller.MachineLearningAlgorithm {
 	mlaCopy := mla.DeepCopy()
-	mlaCopy.Status.State = "Ready"
-	mlaCopy.Status.LastUpdatedTimestamp = metav1.Now()
-	mlaCopy.Status.SyncedSecrets = []string{secret.Name}
-	mlaCopy.Status.SyncedConfigurations = []string{configMap.Name}
-	mlaCopy.Status.SyncedToClusters = []string{"shard0"}
-	mlaCopy.Status.SyncErrors = map[string]string{}
+	mlaCopy.Status.Conditions = conditions
+	if secret != nil {
+		mlaCopy.Status.SyncedSecrets = []string{secret.Name}
+	}
 
-	return mlaCopy
-}
-
-func expectedMlaWithErrors(mla *nexuscontroller.MachineLearningAlgorithm, secret *corev1.Secret, configMap *corev1.ConfigMap, syncErrors map[string]string) *nexuscontroller.MachineLearningAlgorithm {
-	mlaCopy := mla.DeepCopy()
-	mlaCopy.Status.State = "Failed"
-	mlaCopy.Status.LastUpdatedTimestamp = metav1.Now()
-	mlaCopy.Status.SyncedSecrets = []string{secret.Name}
-	mlaCopy.Status.SyncedConfigurations = []string{configMap.Name}
-	mlaCopy.Status.SyncedToClusters = []string{"shard0"}
-	mlaCopy.Status.SyncErrors = syncErrors
+	if configMap != nil {
+		mlaCopy.Status.SyncedConfigurations = []string{configMap.Name}
+	}
+	if syncedTo != nil {
+		mlaCopy.Status.SyncedToClusters = syncedTo
+	}
 
 	return mlaCopy
 }
@@ -197,7 +190,7 @@ func expectedShardConfigMap(configMap *corev1.ConfigMap, mlas []*nexuscontroller
 	return configMapCopy
 }
 
-func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onShard bool) *nexuscontroller.MachineLearningAlgorithm {
+func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onShard bool, status *nexuscontroller.MachineLearningAlgorithmStatus) *nexuscontroller.MachineLearningAlgorithm {
 	envFrom := make([]corev1.EnvFromSource, 2)
 	cargs := make([]string, 1)
 	var labels map[string]string
@@ -221,7 +214,7 @@ func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onS
 		}
 	}
 
-	return &nexuscontroller.MachineLearningAlgorithm{
+	mla := &nexuscontroller.MachineLearningAlgorithm{
 		TypeMeta: metav1.TypeMeta{APIVersion: nexuscontroller.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -252,6 +245,12 @@ func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onS
 			MountDatadogSocket:   true,
 		},
 	}
+
+	if status != nil {
+		mla.Status = *status
+	}
+
+	return mla
 }
 
 func newSecret(name string, owner *nexuscontroller.MachineLearningAlgorithm) *corev1.Secret {
@@ -322,10 +321,14 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 			// avoid issues with time drift
 			currentTime := metav1.Now()
 			expCopy := expObject.DeepCopyObject().(*nexuscontroller.MachineLearningAlgorithm)
-			expCopy.Status.LastUpdatedTimestamp = currentTime
+			for ix := range expCopy.Status.Conditions {
+				expCopy.Status.Conditions[ix].LastTransitionTime = currentTime
+			}
 
 			objCopy := object.DeepCopyObject().(*nexuscontroller.MachineLearningAlgorithm)
-			objCopy.Status.LastUpdatedTimestamp = currentTime
+			for ix := range objCopy.Status.Conditions {
+				objCopy.Status.Conditions[ix].LastTransitionTime = currentTime
+			}
 
 			if !reflect.DeepEqual(expCopy, objCopy) {
 				t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
@@ -541,11 +544,12 @@ func (f *fixture) expectOwnershipUpdateActions(mlaSecret *corev1.Secret, mlaConf
 }
 
 // expectedUpdateActions sets expectations for the resource actions in a shard cluster when a referenced secret or configmap in the controller cluster is updated
-func (f *fixture) expectedUpdateActions(controllerMla *nexuscontroller.MachineLearningAlgorithm, shardMla *nexuscontroller.MachineLearningAlgorithm, mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap) {
+func (f *fixture) expectedUpdateActions(controllerMla *nexuscontroller.MachineLearningAlgorithm, shardMla *nexuscontroller.MachineLearningAlgorithm, mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, controllerStatusUpdated bool) {
 	updatedSecretAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, shardMla.Namespace, mlaSecret)
 	updatedConfigAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, shardMla.Namespace, mlaConfigMap)
-	updateMlaStatusAction := core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, "status", controllerMla.Namespace, controllerMla)
-	f.controllerNexusActions = append(f.controllerNexusActions, updateMlaStatusAction)
+	if controllerStatusUpdated {
+		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, "status", controllerMla.Namespace, controllerMla))
+	}
 	f.shardKubeActions = append(f.shardKubeActions, updatedSecretAction, updatedConfigAction)
 }
 
@@ -554,7 +558,7 @@ func TestCreatesMla(t *testing.T) {
 	f := newFixture(t)
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -568,7 +572,21 @@ func TestCreatesMla(t *testing.T) {
 		&NexusFixture{},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Algorithm \"test\" initializing",
+		),
+	}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Algorithm \"test\" ready",
+		),
+	}))
+
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
@@ -584,7 +602,7 @@ func TestDetectsRogue(t *testing.T) {
 	f := newFixture(t)
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -592,7 +610,7 @@ func TestDetectsRogue(t *testing.T) {
 			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{mla},
 			secretListResults:    []*corev1.Secret{mlaSecret},
 			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{},
+			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
 			existingMlaObjects:   []runtime.Object{mla},
 		},
 		&NexusFixture{
@@ -600,13 +618,18 @@ func TestDetectsRogue(t *testing.T) {
 		},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMlaWithErrors(mla, mlaSecret, mlaConfigMap, map[string]string{
-		"shard0": "Resource \"test-secret\" already exists and is not managed by any Machine Learning Algorithm\n",
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Algorithm \"test\" initializing",
+		),
 	}))
+	// no actions expected due to fail-fast approach in sync
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		nil,
-		expectedShardConfigMap(mlaConfigMap, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
+		nil,
 		false)
 
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
@@ -618,7 +641,7 @@ func TestHandlesNotExistingResource(t *testing.T) {
 	f := newFixture(t)
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -642,7 +665,7 @@ func TestSkipsInvalidMla(t *testing.T) {
 	f := newFixture(t)
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -657,7 +680,14 @@ func TestSkipsInvalidMla(t *testing.T) {
 		&NexusFixture{},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMlaWithErrors(mla, mlaSecret, mlaConfigMap, map[string]string{"shard0": "secret \"test-secret\" not found\nconfigmap \"test-config\" not found"}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Algorithm \"test\" initializing",
+		),
+	}))
+	// no actions expected due to fail-fast approach
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		nil,
@@ -683,9 +713,20 @@ func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 		"new.file": "updated-config",
 	}
 
-	mla := newMla("test", mlaSecretUpdated, mlaConfigMapUpdated, false)
+	mla := newMla("test", mlaSecretUpdated, mlaConfigMapUpdated, false, &nexuscontroller.MachineLearningAlgorithmStatus{
+		SyncedSecrets:        []string{"test-secret"},
+		SyncedConfigurations: []string{"test-config"},
+		SyncedToClusters:     []string{"shard0"},
+		Conditions: []metav1.Condition{
+			*nexuscontroller.NewResourceReadyCondition(
+				metav1.Now(),
+				metav1.ConditionTrue,
+				"Algorithm \"test\" ready",
+			),
+		},
+	})
 
-	mlaOnShard := newMla("test", mlaSecret, mlaConfigMap, true)
+	mlaOnShard := newMla("test", mlaSecret, mlaConfigMap, true, nil)
 	mlaSecretOnShard := newSecret("test-secret", mlaOnShard)
 	mlaSecretOnShardUpdated := mlaSecretOnShard.DeepCopy()
 	mlaSecretOnShardUpdated.Data = map[string][]byte{
@@ -718,7 +759,10 @@ func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 		},
 	)
 
-	f.expectedUpdateActions(expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated), mlaOnShard, mlaSecretOnShardUpdated, mlaConfigMapOnShardUpdated)
+	// secret or cfg updates are not show in resource conditions rn
+	f.expectedUpdateActions(
+		expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated, []string{"shard0"}, nil),
+		mlaOnShard, mlaSecretOnShardUpdated, mlaConfigMapOnShardUpdated, false)
 
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully updated a Secret and a ConfigMap in the shard cluster after those were updated in the controller cluster")
@@ -729,8 +773,15 @@ func TestCreatesSharedResources(t *testing.T) {
 	f := newFixture(t)
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
-	mla1 := newMla("test1", mlaSecret, mlaConfigMap, false)
-	mla2 := newMla("test2", mlaSecret, mlaConfigMap, false)
+	mla1 := newMla("test1", mlaSecret, mlaConfigMap, false, &nexuscontroller.MachineLearningAlgorithmStatus{
+		SyncedSecrets:        []string{"test-secret"},
+		SyncedConfigurations: []string{"test-config"},
+		SyncedToClusters:     []string{"shard0"},
+		Conditions: []metav1.Condition{
+			*nexuscontroller.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
+		},
+	})
+	mla2 := newMla("test2", mlaSecret, mlaConfigMap, false, nil)
 	mlaSecretOnShard1 := expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla1, mla1.GetName())})
 	mlaConfigOnShard1 := expectedShardConfigMap(mlaConfigMap, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla1, mla1.GetName())})
 	mlaOnShard1 := expectedShardMla(mla1, mla1.GetName())
@@ -739,11 +790,15 @@ func TestCreatesSharedResources(t *testing.T) {
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{expectedMla(mla1, mlaSecret, mlaConfigMap), mla2},
+			mlaListResults: []*nexuscontroller.MachineLearningAlgorithm{expectedMla(mla1, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+				*nexuscontroller.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
+			}), mla2},
 			secretListResults:    []*corev1.Secret{mlaSecret},
 			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
 			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
-			existingMlaObjects:   []runtime.Object{expectedMla(mla1, mlaSecret, mlaConfigMap), mla2},
+			existingMlaObjects: []runtime.Object{expectedMla(mla1, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+				*nexuscontroller.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
+			}), mla2},
 		},
 		// shard cluster now has an MLA, a secret and a configmap
 		&NexusFixture{
@@ -754,7 +809,19 @@ func TestCreatesSharedResources(t *testing.T) {
 			existingMlaObjects:   []runtime.Object{mlaOnShard1},
 		},
 	)
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, mlaSecret, mlaConfigMap))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, nil, nil, nil, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Algorithm \"test2\" initializing",
+		)}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Algorithm \"test2\" ready",
+		),
+	}))
 	f.expectShardActions(expectedShardMla(mla2, ""), nil, nil, false)
 	f.expectOwnershipUpdateActions(
 		expectedShardSecret(mlaSecretOnShard1, []*nexuscontroller.MachineLearningAlgorithm{mlaOnShard1, expectedShardMla(mla2, "")}),
@@ -769,7 +836,7 @@ func TestTakesOwnership(t *testing.T) {
 	f := newFixture(t)
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false)
+	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
 	rogueMla := expectedShardMla(mla, "")
 	rogueMla.Spec.MountDatadogSocket = false
 
@@ -789,7 +856,19 @@ func TestTakesOwnership(t *testing.T) {
 		},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Algorithm \"test\" initializing",
+		)}))
+	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+		*nexuscontroller.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Algorithm \"test\" ready",
+		),
+	}))
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
