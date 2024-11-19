@@ -5,7 +5,7 @@ local-prefix: "science.sneaksanddata.com/nexus-configuration-controller"
 threshold:
   file: 70
   package: 70
-  total: 80
+  total: 75
       
 exclude:
   paths:
