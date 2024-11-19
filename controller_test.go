@@ -348,6 +348,11 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintSideBySide(expPatch, patch))
 		}
+	case core.DeleteActionImpl:
+		e, _ := expected.(core.DeleteActionImpl)
+		if e.GetName() != a.GetName() || e.GetNamespace() != a.GetNamespace() {
+			t.Errorf("Action %s targets wrong resource %s/%s, should target %s/%s", a.GetVerb(), a.GetNamespace(), a.GetName(), e.GetNamespace(), e.GetName())
+		}
 	default:
 		t.Errorf("Uncaptured Action %s %s, you should explicitly add a case to capture it",
 			actual.GetVerb(), actual.GetResource().Resource)
@@ -499,6 +504,24 @@ func (f *fixture) runController(ctx context.Context, mlaRefs []cache.ObjectName,
 	f.checkActions(f.controllerKubeActions, f.controllerKubeClient.Actions())
 }
 
+func (f *fixture) runObjectHandler(ctx context.Context, objs []interface{}, startInformers bool) {
+	controllerRef, controllerInformers, shardInformers := f.newController(ctx)
+	if startInformers {
+		controllerInformers.nexusInformers.Start(ctx.Done())
+		controllerInformers.k8sInformers.Start(ctx.Done())
+
+		shardInformers.nexusInformers.Start(ctx.Done())
+		shardInformers.k8sInformers.Start(ctx.Done())
+	}
+
+	for _, obj := range objs {
+		controllerRef.handleObject(obj)
+	}
+
+	f.checkActions(f.shardNexusActions, f.shardNexusClient.Actions())
+	f.checkActions(f.shardKubeActions, f.shardKubeClient.Actions())
+}
+
 func (f *fixture) run(ctx context.Context, mlaRefs []cache.ObjectName, expectError bool) {
 	f.runController(ctx, mlaRefs, true, expectError)
 }
@@ -551,6 +574,11 @@ func (f *fixture) expectedUpdateActions(controllerMla *nexuscontroller.MachineLe
 		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, "status", controllerMla.Namespace, controllerMla))
 	}
 	f.shardKubeActions = append(f.shardKubeActions, updatedSecretAction, updatedConfigAction)
+}
+
+// expectedDeleteActions sets expectations for resource deletions
+func (f *fixture) expectedDeleteActions(shardMla *nexuscontroller.MachineLearningAlgorithm) {
+	f.shardNexusActions = append(f.shardNexusActions, core.NewDeleteAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, shardMla.Namespace, shardMla.Name))
 }
 
 // TestCreatesMla test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
@@ -877,4 +905,54 @@ func TestTakesOwnership(t *testing.T) {
 
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
 	t.Log("Controller successfully took ownership of a MachineLearningAlgorithm and related secrets and configurations on the shard cluster")
+}
+
+// TestDeletesMla tests that MLA removal from controller cluster will propagate to shard clusters
+func TestDeletesMla(t *testing.T) {
+	f := newFixture(t)
+	mlaSecret := newSecret("test-secret", nil)
+	mlaConfigMap := newConfigMap("test-config", nil)
+
+	mla := newMla("test", mlaSecret, mlaConfigMap, false, &nexuscontroller.MachineLearningAlgorithmStatus{
+		SyncedSecrets:        []string{"test-secret"},
+		SyncedConfigurations: []string{"test-config"},
+		SyncedToClusters:     []string{"shard0"},
+		Conditions: []metav1.Condition{
+			*nexuscontroller.NewResourceReadyCondition(
+				metav1.Now(),
+				metav1.ConditionTrue,
+				"Algorithm \"test\" ready",
+			),
+		},
+	})
+
+	mlaOnShard := newMla("test", mlaSecret, mlaConfigMap, true, nil)
+	mlaSecretOnShard := newSecret("test-secret", mlaOnShard)
+	mlaConfigMapOnShard := newConfigMap("test-config", mlaOnShard)
+
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		// controller lister returns a new secret and a new configmap
+		&ControllerFixture{
+			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{mla},
+			secretListResults:    []*corev1.Secret{mlaSecret},
+			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
+			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
+			existingMlaObjects:   []runtime.Object{mla},
+		},
+		&NexusFixture{
+			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{mlaOnShard},
+			secretListResults:    []*corev1.Secret{mlaSecretOnShard},
+			configMapListResults: []*corev1.ConfigMap{mlaConfigMapOnShard},
+			existingCoreObjects:  []runtime.Object{mlaSecretOnShard, mlaConfigMapOnShard},
+			existingMlaObjects:   []runtime.Object{mlaOnShard},
+		},
+	)
+
+	// deletion of MLA must be triggered on the shard
+	f.expectedDeleteActions(mlaOnShard)
+
+	f.runObjectHandler(ctx, []interface{}{mla}, true)
+	t.Log("Controller successfully deleted MLA for the shard after it was deleted from the controller cluster")
 }
