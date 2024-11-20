@@ -173,7 +173,12 @@ func expectedShardSecret(secret *corev1.Secret, mlas []*nexuscontroller.MachineL
 	secretCopy.Labels = expectedLabels()
 	secretCopy.OwnerReferences = make([]metav1.OwnerReference, 0)
 	for _, mla := range mlas {
-		secretCopy.OwnerReferences = append(secretCopy.OwnerReferences, *metav1.NewControllerRef(mla, nexuscontroller.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")))
+		secretCopy.OwnerReferences = append(secretCopy.OwnerReferences, metav1.OwnerReference{
+			APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       mla.Name,
+			UID:        mla.UID,
+		})
 	}
 
 	return secretCopy
@@ -184,7 +189,12 @@ func expectedShardConfigMap(configMap *corev1.ConfigMap, mlas []*nexuscontroller
 	configMapCopy.Labels = expectedLabels()
 	configMapCopy.OwnerReferences = make([]metav1.OwnerReference, 0)
 	for _, mla := range mlas {
-		configMapCopy.OwnerReferences = append(configMapCopy.OwnerReferences, *metav1.NewControllerRef(mla, nexuscontroller.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")))
+		configMapCopy.OwnerReferences = append(configMapCopy.OwnerReferences, metav1.OwnerReference{
+			APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       mla.Name,
+			UID:        mla.UID,
+		})
 	}
 
 	return configMapCopy
@@ -265,7 +275,12 @@ func newSecret(name string, owner *nexuscontroller.MachineLearningAlgorithm) *co
 
 	if owner != nil {
 		secret.SetOwnerReferences([]metav1.OwnerReference{
-			*metav1.NewControllerRef(owner, nexuscontroller.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")),
+			{
+				APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+				Kind:       "MachineLearningAlgorithm",
+				Name:       owner.Name,
+				UID:        owner.UID,
+			},
 		})
 	}
 	return &secret
@@ -282,7 +297,12 @@ func newConfigMap(name string, owner *nexuscontroller.MachineLearningAlgorithm) 
 
 	if owner != nil {
 		configMap.SetOwnerReferences([]metav1.OwnerReference{
-			*metav1.NewControllerRef(owner, nexuscontroller.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")),
+			{
+				APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+				Kind:       "MachineLearningAlgorithm",
+				Name:       owner.Name,
+				UID:        owner.UID,
+			},
 		})
 	}
 

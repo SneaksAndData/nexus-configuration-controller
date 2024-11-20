@@ -120,7 +120,12 @@ func (shard *Shard) CreateSecret(mla *v1.MachineLearningAlgorithm, secret *corev
 			Name:      secret.Name,
 			Namespace: mla.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(mla, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")),
+				{
+					APIVersion: v1.SchemeGroupVersion.String(),
+					Kind:       "MachineLearningAlgorithm",
+					Name:       mla.Name,
+					UID:        mla.UID,
+				},
 			},
 			Labels: shard.GetReferenceLabels(),
 		},
@@ -140,7 +145,12 @@ func (shard *Shard) CreateConfigMap(mla *v1.MachineLearningAlgorithm, configMap 
 			Name:      configMap.Name,
 			Namespace: mla.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(mla, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")),
+				{
+					APIVersion: v1.SchemeGroupVersion.String(),
+					Kind:       "MachineLearningAlgorithm",
+					Name:       mla.Name,
+					UID:        mla.UID,
+				},
 			},
 			Labels: shard.GetReferenceLabels(),
 		},
@@ -157,7 +167,12 @@ func (shard *Shard) UpdateSecret(secret *corev1.Secret, newData map[string][]byt
 		updatedSecret.Data = newData
 	}
 	if newOwner != nil {
-		updatedSecret.OwnerReferences = append(updatedSecret.OwnerReferences, *metav1.NewControllerRef(newOwner, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")))
+		updatedSecret.OwnerReferences = append(updatedSecret.OwnerReferences, metav1.OwnerReference{
+			APIVersion: v1.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       newOwner.Name,
+			UID:        newOwner.UID,
+		})
 	}
 	return shard.kubernetesclientset.CoreV1().Secrets(updatedSecret.Namespace).Update(context.TODO(), updatedSecret, metav1.UpdateOptions{FieldManager: fieldManager})
 }
@@ -169,7 +184,12 @@ func (shard *Shard) UpdateConfigMap(configMap *corev1.ConfigMap, newData map[str
 		updatedConfigMap.Data = newData
 	}
 	if newOwner != nil {
-		updatedConfigMap.OwnerReferences = append(updatedConfigMap.OwnerReferences, *metav1.NewControllerRef(newOwner, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")))
+		updatedConfigMap.OwnerReferences = append(updatedConfigMap.OwnerReferences, metav1.OwnerReference{
+			APIVersion: v1.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       newOwner.Name,
+			UID:        newOwner.UID,
+		})
 	}
 	return shard.kubernetesclientset.CoreV1().ConfigMaps(updatedConfigMap.Namespace).Update(context.TODO(), updatedConfigMap, metav1.UpdateOptions{FieldManager: fieldManager})
 }
