@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -168,20 +169,20 @@ func (c *Controller) handleObject(obj interface{}) {
 		}
 	default:
 		logger.V(4).Info("Processing object", "object", klog.KObj(object))
-		if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
-			// If this object is not owned by a MachineLearningAlgorithm, skip it
-			if ownerRef.Kind != "MachineLearningAlgorithm" {
-				return
-			}
+		if objRefs := object.GetOwnerReferences(); len(objRefs) > 0 {
+			for _, ownerRef := range objRefs {
+				if ownerRef.Kind != "MachineLearningAlgorithm" {
+					continue
+				}
 
-			mla, err := c.mlaLister.MachineLearningAlgorithms(object.GetNamespace()).Get(ownerRef.Name)
-			if err != nil {
-				logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
-				return
-			}
+				mla, err := c.mlaLister.MachineLearningAlgorithms(object.GetNamespace()).Get(ownerRef.Name)
+				if err != nil {
+					logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
+					return
+				}
 
-			c.enqueueMachineLearningAlgorithm(mla)
-			return
+				c.enqueueMachineLearningAlgorithm(mla)
+			}
 		}
 	}
 }
@@ -388,20 +389,22 @@ func (c *Controller) reportMlaSyncedCondition(mla *v1.MachineLearningAlgorithm, 
 // and if not AND the resource is not owned by any other MachineLearningAlgorithm, logs a warning to the event recorder and returns error msg.
 func (c *Controller) isMissingOwnership(obj metav1.Object, owner metav1.Object) (bool, error) {
 	// if already controlled, no error
-	if metav1.IsControlledBy(obj, owner) {
-		return false, nil
-	}
-	// check if we have any MachineLearningAlgorithm already owning this obj
-	// this can be the case if a secret is shard by multiple MachineLearningAlgorithm resources
-	for _, ownerRef := range obj.GetOwnerReferences() {
-		if ownerRef.Kind == "MachineLearningAlgorithm" {
-			return true, nil
+	if objRefs := obj.GetOwnerReferences(); len(objRefs) > 0 {
+		// check if we own this object
+		// since secrets and configmaps can be referenced by multiple MLAs, we need to find `owner` there
+		for _, ownerRef := range obj.GetOwnerReferences() {
+			if ownerRef.Kind == "MachineLearningAlgorithm" && ownerRef.UID == owner.GetUID() {
+				return false, nil
+			}
 		}
+	} else {
+		// rogue resource not owned by any MachineLearningAlgorithm - report error
+		msg := fmt.Sprintf(MessageResourceExists, obj.GetName())
+		c.recorder.Event(obj.(runtime.Object), corev1.EventTypeWarning, ErrResourceExists, msg)
+		return false, fmt.Errorf("%s", msg)
 	}
-	// rogue resource not owned by any MachineLearningAlgorithm - report error
-	msg := fmt.Sprintf(MessageResourceExists, obj.GetName())
-	c.recorder.Event(owner.(*v1.MachineLearningAlgorithm), corev1.EventTypeWarning, ErrResourceExists, msg)
-	return false, fmt.Errorf("%s", msg)
+
+	return true, nil
 }
 
 func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v1.MachineLearningAlgorithm, shardMla *v1.MachineLearningAlgorithm, shard *shards.Shard, logger *klog.Logger) error {
