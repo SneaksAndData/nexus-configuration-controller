@@ -19,6 +19,8 @@ package v1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"maps"
+	"slices"
 )
 
 // +genclient
@@ -87,35 +89,35 @@ type MachineLearningAlgorithmList struct {
 }
 
 func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
-	subset := []string{}
+	subset := map[string]bool{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.SecretRef != nil {
-			subset = append(subset, ref.SecretRef.Name)
+			subset[ref.SecretRef.Name] = true
 		}
 	}
 
 	for _, ref := range mla.Spec.Env {
 		if ref.ValueFrom != nil && ref.ValueFrom.SecretKeyRef != nil {
-			subset = append(subset, ref.ValueFrom.SecretKeyRef.Name)
+			subset[ref.ValueFrom.SecretKeyRef.Name] = true
 		}
 	}
 
-	return subset
+	return slices.Collect(maps.Keys(subset))
 }
 
 func (mla *MachineLearningAlgorithm) GetConfigMapNames() []string {
-	subset := []string{}
+	subset := map[string]bool{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.ConfigMapRef != nil {
-			subset = append(subset, ref.ConfigMapRef.Name)
+			subset[ref.ConfigMapRef.Name] = true
 		}
 	}
 
 	for _, ref := range mla.Spec.Env {
 		if ref.ValueFrom != nil && ref.ValueFrom.ConfigMapKeyRef != nil {
-			subset = append(subset, ref.ValueFrom.ConfigMapKeyRef.Name)
+			subset[ref.ValueFrom.ConfigMapKeyRef.Name] = true
 		}
 	}
 
-	return subset
+	return slices.Collect(maps.Keys(subset))
 }
