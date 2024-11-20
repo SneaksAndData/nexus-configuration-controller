@@ -156,11 +156,11 @@ func (c *Controller) handleObject(obj interface{}) {
 		logger.V(4).Info("Recovered deleted object", "resourceName", object.GetName())
 	}
 
-	switch object.(type) {
+	switch object := object.(type) {
 	case *v1.MachineLearningAlgorithm:
 		logger.V(4).Info("MLA resource deleted, removing it from shards", "mla", klog.KObj(object))
 		for _, shard := range c.nexusShards {
-			deleteErr := shard.DeleteMachineLearningAlgorithm(object.(*v1.MachineLearningAlgorithm))
+			deleteErr := shard.DeleteMachineLearningAlgorithm(object)
 			if deleteErr != nil {
 				utilruntime.HandleErrorWithContext(context.Background(), nil, "Error deleting MLA from a connected shard", "shard", shard.Name)
 				return
