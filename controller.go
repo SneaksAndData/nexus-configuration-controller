@@ -540,6 +540,62 @@ func (c *Controller) shardNames() []string {
 	return result
 }
 
+func (c *Controller) isOwnedBy(obj metav1.ObjectMeta, controllerMla *v1.MachineLearningAlgorithm) bool {
+	for _, ownerRef := range obj.OwnerReferences {
+		if ownerRef.UID == controllerMla.UID {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *Controller) adoptReferences(mla *v1.MachineLearningAlgorithm) error {
+	for _, secretName := range mla.GetSecretNames() {
+		referencedSecret, err := c.secretLister.Secrets(mla.Namespace).Get(secretName)
+		if err != nil {
+			return err
+		}
+		refCopy := referencedSecret.DeepCopy()
+		if !c.isOwnedBy(referencedSecret.ObjectMeta, mla) {
+			refCopy.OwnerReferences = append(refCopy.OwnerReferences, metav1.OwnerReference{
+				APIVersion: v1.SchemeGroupVersion.String(),
+				Kind:       "MachineLearningAlgorithm",
+				Name:       mla.Name,
+				UID:        mla.UID,
+			})
+
+			_, err := c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Update(context.TODO(), refCopy, metav1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, configMapName := range mla.GetConfigMapNames() {
+		referencedConfgMap, err := c.configMapLister.ConfigMaps(mla.Namespace).Get(configMapName)
+		if err != nil {
+			return err
+		}
+		refCopy := referencedConfgMap.DeepCopy()
+		if !c.isOwnedBy(referencedConfgMap.ObjectMeta, mla) {
+			refCopy.OwnerReferences = append(refCopy.OwnerReferences, metav1.OwnerReference{
+				APIVersion: v1.SchemeGroupVersion.String(),
+				Kind:       "MachineLearningAlgorithm",
+				Name:       mla.Name,
+				UID:        mla.UID,
+			})
+
+			_, err := c.controllerkubeclientset.CoreV1().ConfigMaps(mla.Namespace).Update(context.TODO(), refCopy, metav1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // syncHandler compares the actual state with the desired, and attempts to
 // converge the two. It then updates the Status block of the MachineLearningAlgorithm resource
 // with the current status of the resource.
@@ -563,6 +619,13 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	mla, err = c.reportMlaInitCondition(mla)
 	// requeue in case status update fails
 	if err != nil {
+		return err
+	}
+
+	err = c.adoptReferences(mla)
+	// requeue in case we can't take ownership of referenced secrets/configs
+	if err != nil {
+		logger.V(4).Error(err, fmt.Sprintf("Invalid machine learning algorithm resource: %s", mla.Name))
 		return err
 	}
 

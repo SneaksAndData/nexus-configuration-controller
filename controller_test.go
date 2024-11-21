@@ -596,17 +596,57 @@ func (f *fixture) expectedUpdateActions(controllerMla *nexuscontroller.MachineLe
 	f.shardKubeActions = append(f.shardKubeActions, updatedSecretAction, updatedConfigAction)
 }
 
+// expectedUpdateActions sets expectations for the resource actions in a shard cluster when a referenced secret or configmap in the controller cluster is updated
+func (f *fixture) expectedControllerUpdateActions(controllerMla *nexuscontroller.MachineLearningAlgorithm, mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, controllerStatusUpdated bool) {
+	updatedSecretAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, controllerMla.Namespace, mlaSecret)
+	updatedConfigAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, controllerMla.Namespace, mlaConfigMap)
+	if controllerStatusUpdated {
+		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, "status", controllerMla.Namespace, controllerMla))
+	}
+	f.controllerKubeActions = append(f.controllerKubeActions, updatedSecretAction, updatedConfigAction)
+}
+
 // expectedDeleteActions sets expectations for resource deletions
 func (f *fixture) expectedDeleteActions(shardMla *nexuscontroller.MachineLearningAlgorithm) {
 	f.shardNexusActions = append(f.shardNexusActions, core.NewDeleteAction(schema.GroupVersionResource{Resource: "machinelearningalgorithms"}, shardMla.Namespace, shardMla.Name))
 }
 
-// TestCreatesMla test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
-func TestCreatesMla(t *testing.T) {
-	f := newFixture(t)
+func provisionControllerResources() (*corev1.Secret, *corev1.ConfigMap, *nexuscontroller.MachineLearningAlgorithm) {
 	mlaSecret := newSecret("test-secret", nil)
 	mlaConfigMap := newConfigMap("test-config", nil)
 	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
+	return mlaSecret, mlaConfigMap, mla
+}
+
+func provisionOwnedControllerResources(mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, mla *nexuscontroller.MachineLearningAlgorithm) (*corev1.Secret, *corev1.ConfigMap) {
+	ownedMlaSecret := mlaSecret.DeepCopy()
+	ownedMlaSecret.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       mla.Name,
+			UID:        mla.UID,
+		},
+	}
+	ownedMlaConfigMap := mlaConfigMap.DeepCopy()
+	ownedMlaConfigMap.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       mla.Name,
+			UID:        mla.UID,
+		},
+	}
+
+	return ownedMlaSecret, ownedMlaConfigMap
+}
+
+// TestCreatesMla test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
+func TestCreatesMla(t *testing.T) {
+	f := newFixture(t)
+	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
+	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -614,7 +654,7 @@ func TestCreatesMla(t *testing.T) {
 			mlaListResults:       []*nexuscontroller.MachineLearningAlgorithm{mla},
 			secretListResults:    []*corev1.Secret{mlaSecret},
 			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{},
+			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
 			existingMlaObjects:   []runtime.Object{mla},
 		},
 		&NexusFixture{},
@@ -635,6 +675,8 @@ func TestCreatesMla(t *testing.T) {
 		),
 	}))
 
+	f.expectedControllerUpdateActions(mla, ownedMlaSecret, ownedMlaConfigMap, false)
+
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
@@ -648,9 +690,9 @@ func TestCreatesMla(t *testing.T) {
 // TestDetectsRogue tests the rogue secrets or configs are detected and reported as errors correctly
 func TestDetectsRogue(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
+	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
+	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -680,6 +722,8 @@ func TestDetectsRogue(t *testing.T) {
 		nil,
 		false)
 
+	f.expectedControllerUpdateActions(mla, ownedMlaSecret, ownedMlaConfigMap, false)
+
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
 	t.Log("Controller successfully detected a rogue resource on the shard cluster")
 }
@@ -687,9 +731,8 @@ func TestDetectsRogue(t *testing.T) {
 // TestHandlesNotExistingResource tests that missing Mla case is handled by the controller
 func TestHandlesNotExistingResource(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
+	_, _, mla := provisionControllerResources()
+
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -735,12 +778,6 @@ func TestSkipsInvalidMla(t *testing.T) {
 			"Algorithm \"test\" initializing",
 		),
 	}))
-	// no actions expected due to fail-fast approach
-	f.expectShardActions(
-		expectedShardMla(mla, ""),
-		nil,
-		nil,
-		false)
 
 	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
 	t.Log("Controller skipped a misconfigured Mla resource")
