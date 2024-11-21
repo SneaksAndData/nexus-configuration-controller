@@ -754,9 +754,7 @@ func TestHandlesNotExistingResource(t *testing.T) {
 // TestSkipsInvalidMla tests that resource creation is skipped with a status update in case referenced configurations do not exist
 func TestSkipsInvalidMla(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
+	_, _, mla := provisionControllerResources()
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
@@ -786,19 +784,20 @@ func TestSkipsInvalidMla(t *testing.T) {
 // TestUpdatesMlaSecretAndConfig test that update to a secret referenced by the MLA is propagated to shard clusters
 func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaSecretUpdated := mlaSecret.DeepCopy()
+	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
+	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+
+	mlaSecretUpdated := ownedMlaSecret.DeepCopy()
 	mlaSecretUpdated.Data = map[string][]byte{
 		"secret.file": []byte("updated-secret"),
 	}
 
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mlaConfigMapUpdated := mlaConfigMap.DeepCopy()
+	mlaConfigMapUpdated := ownedMlaConfigMap.DeepCopy()
 	mlaConfigMapUpdated.Data = map[string]string{
 		"new.file": "updated-config",
 	}
 
-	mla := newMla("test", mlaSecretUpdated, mlaConfigMapUpdated, false, &nexuscontroller.MachineLearningAlgorithmStatus{
+	mla = newMla("test", mlaSecretUpdated, mlaConfigMapUpdated, false, &nexuscontroller.MachineLearningAlgorithmStatus{
 		SyncedSecrets:        []string{"test-secret"},
 		SyncedConfigurations: []string{"test-config"},
 		SyncedToClusters:     []string{"shard0"},
