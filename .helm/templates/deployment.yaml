@@ -40,9 +40,9 @@ spec:
         - name: ncc
           args:
             - "--shards-cfg"
-            - {{ .Values.controller.shardsConfigPath }}
+            - {{ .Values.controller.shardsConfigPath | quote }}
             - "--alias"
-            - {{ .Values.controller.alias }}
+            - {{ .Values.controller.alias | quote }}
             - "--namespace"
             - {{ .Values.controller.namespace | quote }}
             - "--workers"
