@@ -26,6 +26,7 @@ import (
 	"path"
 	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
 	informers "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/informers/externalversions"
+	"science.sneaksanddata.com/nexus-configuration-controller/pkg/logging"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/signals"
 	"strings"
@@ -62,7 +63,13 @@ func main() {
 
 	// set up signals so we handle the shutdown signal gracefully
 	ctx := signals.SetupSignalHandler()
+	appLogger, err := logging.ConfigureLogger(ctx, map[string]string{})
+	klog.SetSlogLogger(appLogger)
 	logger := klog.FromContext(ctx)
+
+	if err != nil {
+		logger.Error(err, "One of the logging handlers cannot be configured")
+	}
 
 	controllerCfg, err := clientcmd.BuildConfigFromFlags("", controllerConfigPath)
 	if err != nil {
