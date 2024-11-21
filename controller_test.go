@@ -865,7 +865,24 @@ func TestCreatesSharedResources(t *testing.T) {
 			*nexuscontroller.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
 		},
 	})
+	ownedMla1Secret, ownedMla1ConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla1)
+
 	mla2 := newMla("test2", mlaSecret, mlaConfigMap, false, nil)
+	ownedMla12Secret := ownedMla1Secret.DeepCopy()
+	ownedMla12Secret.OwnerReferences = append(ownedMla12Secret.OwnerReferences, metav1.OwnerReference{
+		APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+		Kind:       "MachineLearningAlgorithm",
+		Name:       mla2.Name,
+		UID:        mla2.UID,
+	})
+	ownedMla12ConfigMap := ownedMla1ConfigMap.DeepCopy()
+	ownedMla12ConfigMap.OwnerReferences = append(ownedMla12ConfigMap.OwnerReferences, metav1.OwnerReference{
+		APIVersion: nexuscontroller.SchemeGroupVersion.String(),
+		Kind:       "MachineLearningAlgorithm",
+		Name:       mla2.Name,
+		UID:        mla2.UID,
+	})
+
 	mlaSecretOnShard1 := expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla1, mla1.GetName())})
 	mlaConfigOnShard1 := expectedShardConfigMap(mlaConfigMap, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla1, mla1.GetName())})
 	mlaOnShard1 := expectedShardMla(mla1, mla1.GetName())
@@ -877,9 +894,9 @@ func TestCreatesSharedResources(t *testing.T) {
 			mlaListResults: []*nexuscontroller.MachineLearningAlgorithm{expectedMla(mla1, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
 				*nexuscontroller.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
 			}), mla2},
-			secretListResults:    []*corev1.Secret{mlaSecret},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
+			secretListResults:    []*corev1.Secret{ownedMla1Secret},
+			configMapListResults: []*corev1.ConfigMap{ownedMla1ConfigMap},
+			existingCoreObjects:  []runtime.Object{ownedMla1Secret, ownedMla1ConfigMap},
 			existingMlaObjects: []runtime.Object{expectedMla(mla1, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
 				*nexuscontroller.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
 			}), mla2},
@@ -906,6 +923,7 @@ func TestCreatesSharedResources(t *testing.T) {
 			"Algorithm \"test2\" ready",
 		),
 	}))
+	f.expectedControllerUpdateActions(mla2, ownedMla12Secret, ownedMla12ConfigMap, false)
 	f.expectShardActions(expectedShardMla(mla2, ""), nil, nil, false)
 	f.expectOwnershipUpdateActions(
 		expectedShardSecret(mlaSecretOnShard1, []*nexuscontroller.MachineLearningAlgorithm{mlaOnShard1, expectedShardMla(mla2, "")}),
@@ -918,9 +936,9 @@ func TestCreatesSharedResources(t *testing.T) {
 // TestTakesOwnership test verifies that controller doesn't fail if it finds an existing MLA not created by it, and simply takes ownership
 func TestTakesOwnership(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
+	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
+	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+
 	rogueMla := expectedShardMla(mla, "")
 	rogueMla.Spec.MountDatadogSocket = false
 
@@ -953,6 +971,7 @@ func TestTakesOwnership(t *testing.T) {
 			"Algorithm \"test\" ready",
 		),
 	}))
+	f.expectedControllerUpdateActions(mla, ownedMlaSecret, ownedMlaConfigMap, false)
 	f.expectShardActions(
 		expectedShardMla(mla, ""),
 		expectedShardSecret(mlaSecret, []*nexuscontroller.MachineLearningAlgorithm{expectedShardMla(mla, "")}),
