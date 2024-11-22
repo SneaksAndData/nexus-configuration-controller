@@ -163,4 +163,19 @@ controller:
   rateLimitElementsPerSecond: 50
   
   # Rate limit burst elements
-  rateLimitElementsBurst: 300  
+  rateLimitElementsBurst: 300
+    
+  # observability settings for Datadog
+  datadog:
+    
+    # if enabled, will set Datadog-specific environment variables on the container 
+    enabled: false
+    
+    # Datadog endpoint to sink logs to
+    endpoint: "datadoghq.eu"
+    
+    # Datadog API Key to use for log submissions
+    apiKey: "key"
+    
+    # Datadog Service Name parameter
+    serviceName: "nexus-configuration-controller"
