@@ -151,4 +151,34 @@ controller:
   namespace: "nexus"
   
   # Number of worker threads to use for the processing queue
-  workers: 10
+  workers: 2
+  
+  # Failure backoff base delay. Example values: 5ms, 5s
+  backOffBaseDelay: 30ms
+  
+  # Failure backoff max delay. Example values: 5s, 1m
+  backOffMaxDelay: 5s
+  
+  # Rate limit elements per second
+  rateLimitElementsPerSecond: 50
+  
+  # Rate limit burst elements
+  rateLimitElementsBurst: 300
+    
+  # observability settings for Datadog
+  datadog:
+    
+    # if enabled, will set Datadog-specific environment variables on the container 
+    enabled: false
+    
+    # Datadog endpoint to sink logs to
+    endpoint: "datadoghq.eu"
+    
+    # A name for a Secret resource that contains Datadog API Key to use for log submissions
+    apiKeySecret: "secretName"
+
+    # A key in the Secret that contains Datadog API Key    
+    apiKeySecretKey: "secretKey"
+    
+    # Datadog Service Name parameter
+    serviceName: "nexus-configuration-controller"

@@ -1,24 +1,26 @@
 /*
-Copyright 2024-2026 ECCO Data & AI Open-Source Project Maintainers.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ * Copyright (c) 2024. ECCO Data & AI Open-Source Project Maintainers.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ */
 
 package v1
 
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"maps"
+	"slices"
 )
 
 // +genclient
@@ -37,15 +39,15 @@ type MachineLearningAlgorithm struct {
 type MachineLearningAlgorithmSpec struct {
 	ImageRegistry        string                 `json:"imageRegistry"`
 	ImageRepository      string                 `json:"imageRepository"`
-	ImageTag             string                 `json:"ImageTag"`
+	ImageTag             string                 `json:"imageTag"`
 	DeadlineSeconds      *int32                 `json:"deadlineSeconds,omitempty"`
 	MaximumRetries       *int32                 `json:"maximumRetries,omitempty"`
 	Env                  []corev1.EnvVar        `json:"env,omitempty"`
 	EnvFrom              []corev1.EnvFromSource `json:"envFrom,omitempty"`
 	CpuLimit             string                 `json:"cpuLimit"`
 	MemoryLimit          string                 `json:"memoryLimit"`
-	WorkgroupHost        string                 `json:"WorkgroupHost"`
-	Workgroup            string                 `json:"Workgroup"`
+	WorkgroupHost        string                 `json:"workgroupHost"`
+	Workgroup            string                 `json:"workgroup"`
 	AdditionalWorkgroups map[string]string      `json:"additionalWorkgroups,omitempty"`
 	MonitoringParameters []string               `json:"monitoringParameters,omitempty"`
 	CustomResources      map[string]string      `json:"customResources,omitempty"`
@@ -57,14 +59,23 @@ type MachineLearningAlgorithmSpec struct {
 	MountDatadogSocket   bool                   `json:"mountDatadogSocket,omitempty"`
 }
 
+// NewResourceReadyCondition creates a new condition indicating an overall Mla synchronisation success or failure
+func NewResourceReadyCondition(transitionTime metav1.Time, status metav1.ConditionStatus, message string) *metav1.Condition {
+	return &metav1.Condition{
+		LastTransitionTime: transitionTime,
+		Type:               "Ready",
+		Status:             status,
+		Reason:             "AlgorithmReady",
+		Message:            message,
+	}
+}
+
 // MachineLearningAlgorithmStatus is the status for a MachineLearningAlgorithm resource
 type MachineLearningAlgorithmStatus struct {
-	LastUpdatedTimestamp metav1.Time       `json:"lastUpdatedTimestamp"`
-	SyncedSecrets        []string          `json:"syncedSecrets,omitempty"`
-	SyncedConfigurations []string          `json:"syncedConfigurations,omitempty"`
-	SyncedToClusters     []string          `json:"syncedToClusters,omitempty"`
-	State                string            `json:"state"`
-	SyncErrors           map[string]string `json:"syncErrors,omitempty"`
+	SyncedSecrets        []string           `json:"syncedSecrets,omitempty"`
+	SyncedConfigurations []string           `json:"syncedConfigurations,omitempty"`
+	SyncedToClusters     []string           `json:"syncedToClusters,omitempty"`
+	Conditions           []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -78,23 +89,35 @@ type MachineLearningAlgorithmList struct {
 }
 
 func (mla *MachineLearningAlgorithm) GetSecretNames() []string {
-	subset := make([]string, 0, len(mla.Spec.EnvFrom))
+	subset := map[string]bool{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.SecretRef != nil {
-			subset = append(subset, ref.SecretRef.Name)
+			subset[ref.SecretRef.Name] = true
 		}
 	}
 
-	return subset
+	for _, ref := range mla.Spec.Env {
+		if ref.ValueFrom != nil && ref.ValueFrom.SecretKeyRef != nil {
+			subset[ref.ValueFrom.SecretKeyRef.Name] = true
+		}
+	}
+
+	return slices.Collect(maps.Keys(subset))
 }
 
 func (mla *MachineLearningAlgorithm) GetConfigMapNames() []string {
-	subset := make([]string, 0, len(mla.Spec.EnvFrom))
+	subset := map[string]bool{}
 	for _, ref := range mla.Spec.EnvFrom {
 		if ref.ConfigMapRef != nil {
-			subset = append(subset, ref.ConfigMapRef.Name)
+			subset[ref.ConfigMapRef.Name] = true
 		}
 	}
 
-	return subset
+	for _, ref := range mla.Spec.Env {
+		if ref.ValueFrom != nil && ref.ValueFrom.ConfigMapKeyRef != nil {
+			subset[ref.ValueFrom.ConfigMapKeyRef.Name] = true
+		}
+	}
+
+	return slices.Collect(maps.Keys(subset))
 }
