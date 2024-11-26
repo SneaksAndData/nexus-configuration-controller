@@ -39,11 +39,24 @@ spec:
       containers:
         - name: ncc
           args:
-            - "--shardscfg=/app/config/shards"
-            - "--controllercfg={{ .Values.controller.shardsConfigPath }}"
-            - "--alias={{ .Values.controller.alias }}"
-            - "--controllerns={{ .Values.controller.namespace }}"
-            - "--workers={{ .Values.controller.workers }}" 
+            - "--shards-cfg"
+            - {{ .Values.controller.shardsConfigPath | quote }}
+            - "--alias"
+            - {{ .Values.controller.alias | quote }}
+            - "--namespace"
+            - {{ .Values.controller.namespace | quote }}
+            - "--workers"
+            - {{ .Values.controller.workers | quote }}
+            - "--v"
+            - "4"
+            - "--failure-rate-base-delay"
+            - {{ .Values.controller.backOffBaseDelay | quote }}
+            - "--failure-rate-max-delay"
+            - {{ .Values.controller.backOffMaxDelay | quote }}
+            - "--rate-limit-per-second"
+            - {{ .Values.controller.rateLimitElementsPerSecond | quote }}
+            - "--rate-limit-burst"
+            - {{ .Values.controller.rateLimitElementsBurst | quote}}
         {{- with .Values.securityContext }}
           securityContext:
           {{- toYaml . | nindent 12 }}
@@ -53,6 +66,21 @@ spec:
           env:
             - name: APPLICATION_VERSION
               value: "{{ (default (printf "v%s" .Chart.AppVersion) .Values.image.tag) }}"
+          {{- if .Values.controller.datadog.enabled }}
+            - name: DATADOG__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.controller.datadog.apiKeySecret | quote }}
+                  key: {{ .Values.controller.datadog.apiKeySecretKey | quote }}
+            - name: DATADOG__ENDPOINT
+              value: {{ .Values.controller.datadog.endpoint | quote }}
+            - name: DATADOG__APPLICATION_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: DATADOG__SERVICE_NAME
+              value: {{ .Values.controller.datadog.serviceName }}
+          {{- end }}
           {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

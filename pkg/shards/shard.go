@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2024. ECCO Data & AI Open-Source Project Maintainers.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ */
+
 package shards
 
 import (
@@ -68,33 +84,31 @@ func (shard *Shard) GetReferenceLabels() map[string]string {
 	}
 }
 
-func (shard *Shard) CreateMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
+func (shard *Shard) CreateMachineLearningAlgorithm(mlaName string, mlaNamespace string, mlaSpec v1.MachineLearningAlgorithmSpec, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
 	newMla := &v1.MachineLearningAlgorithm{
 		TypeMeta: metav1.TypeMeta{APIVersion: v1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      mla.Name,
-			Namespace: mla.Namespace,
+			Name:      mlaName,
+			Namespace: mlaNamespace,
 			Labels:    shard.GetReferenceLabels(),
 		},
-		Spec: mla.Spec,
+		Spec: *mlaSpec.DeepCopy(),
 	}
 
-	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).Create(context.TODO(), newMla, metav1.CreateOptions{FieldManager: fieldManager})
+	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mlaNamespace).Create(context.TODO(), newMla, metav1.CreateOptions{FieldManager: fieldManager})
 }
 
 // UpdateMachineLearningAlgorithm updates the MLA in this shard in case it drifts from the one in the controller cluster
-func (shard *Shard) UpdateMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
-	newMla := &v1.MachineLearningAlgorithm{
-		TypeMeta: metav1.TypeMeta{APIVersion: v1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      mla.Name,
-			Namespace: mla.Namespace,
-			Labels:    shard.GetReferenceLabels(),
-		},
-		Spec: *mla.Spec.DeepCopy(),
-	}
+func (shard *Shard) UpdateMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm, mlaSpec v1.MachineLearningAlgorithmSpec, fieldManager string) (*v1.MachineLearningAlgorithm, error) {
+	newMla := mla.DeepCopy()
+	newMla.Spec = *mlaSpec.DeepCopy()
 
-	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).Update(context.TODO(), newMla, metav1.UpdateOptions{FieldManager: fieldManager})
+	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(newMla.Namespace).Update(context.TODO(), newMla, metav1.UpdateOptions{FieldManager: fieldManager})
+}
+
+// DeleteMachineLearningAlgorithm removes the MLA from this shard
+func (shard *Shard) DeleteMachineLearningAlgorithm(mla *v1.MachineLearningAlgorithm) error {
+	return shard.nexusclientset.ScienceV1().MachineLearningAlgorithms(mla.Namespace).Delete(context.TODO(), mla.Name, metav1.DeleteOptions{})
 }
 
 // CreateSecret creates a new Secret for a MachineLearningAlgorithm resource. It also sets
@@ -106,7 +120,12 @@ func (shard *Shard) CreateSecret(mla *v1.MachineLearningAlgorithm, secret *corev
 			Name:      secret.Name,
 			Namespace: mla.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(mla, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")),
+				{
+					APIVersion: v1.SchemeGroupVersion.String(),
+					Kind:       "MachineLearningAlgorithm",
+					Name:       mla.Name,
+					UID:        mla.UID,
+				},
 			},
 			Labels: shard.GetReferenceLabels(),
 		},
@@ -126,7 +145,12 @@ func (shard *Shard) CreateConfigMap(mla *v1.MachineLearningAlgorithm, configMap 
 			Name:      configMap.Name,
 			Namespace: mla.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(mla, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")),
+				{
+					APIVersion: v1.SchemeGroupVersion.String(),
+					Kind:       "MachineLearningAlgorithm",
+					Name:       mla.Name,
+					UID:        mla.UID,
+				},
 			},
 			Labels: shard.GetReferenceLabels(),
 		},
@@ -143,7 +167,12 @@ func (shard *Shard) UpdateSecret(secret *corev1.Secret, newData map[string][]byt
 		updatedSecret.Data = newData
 	}
 	if newOwner != nil {
-		updatedSecret.OwnerReferences = append(updatedSecret.OwnerReferences, *metav1.NewControllerRef(newOwner, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")))
+		updatedSecret.OwnerReferences = append(updatedSecret.OwnerReferences, metav1.OwnerReference{
+			APIVersion: v1.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       newOwner.Name,
+			UID:        newOwner.UID,
+		})
 	}
 	return shard.kubernetesclientset.CoreV1().Secrets(updatedSecret.Namespace).Update(context.TODO(), updatedSecret, metav1.UpdateOptions{FieldManager: fieldManager})
 }
@@ -155,7 +184,12 @@ func (shard *Shard) UpdateConfigMap(configMap *corev1.ConfigMap, newData map[str
 		updatedConfigMap.Data = newData
 	}
 	if newOwner != nil {
-		updatedConfigMap.OwnerReferences = append(updatedConfigMap.OwnerReferences, *metav1.NewControllerRef(newOwner, v1.SchemeGroupVersion.WithKind("MachineLearningAlgorithm")))
+		updatedConfigMap.OwnerReferences = append(updatedConfigMap.OwnerReferences, metav1.OwnerReference{
+			APIVersion: v1.SchemeGroupVersion.String(),
+			Kind:       "MachineLearningAlgorithm",
+			Name:       newOwner.Name,
+			UID:        newOwner.UID,
+		})
 	}
 	return shard.kubernetesclientset.CoreV1().ConfigMaps(updatedConfigMap.Namespace).Update(context.TODO(), updatedConfigMap, metav1.UpdateOptions{FieldManager: fieldManager})
 }
