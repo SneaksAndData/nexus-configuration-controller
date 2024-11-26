@@ -38,6 +38,7 @@ var (
 	controllerConfigPath       string
 	shardConfigPath            string
 	controllerNamespace        string
+	logLevel                   string
 	workers                    int
 	failureRateBaseDelay       string
 	failureRateMaxDelay        string
@@ -55,6 +56,7 @@ func init() {
 	flag.StringVar(&failureRateMaxDelay, "failure-rate-max-delay", "5s", "Max delay for exponential failure backoff, seconds.")
 	flag.IntVar(&rateLimitElementsPerSecond, "rate-limit-per-second", 50, "Max number of resources to process per second.")
 	flag.IntVar(&rateLimitElementsBurst, "rate-limit-burst", 300, "Burst this number of elements before rate limit kicks in.")
+	flag.StringVar(&logLevel, "log-level", "INFO", "Log level for the controller.")
 }
 
 func main() {
@@ -63,7 +65,7 @@ func main() {
 
 	// set up signals so we handle the shutdown signal gracefully
 	ctx := signals.SetupSignalHandler()
-	appLogger, err := logging.ConfigureLogger(ctx, map[string]string{})
+	appLogger, err := logging.ConfigureLogger(ctx, map[string]string{}, logLevel)
 	klog.SetSlogLogger(appLogger)
 	logger := klog.FromContext(ctx)
 
