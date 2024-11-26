@@ -59,8 +59,6 @@ const (
 	ErrResourceMissing = "ErrResourceMissing"
 	// ErrResourceSyncError is used when a secret/configmap fails to sync with a fatal exception
 	ErrResourceSyncError = "ErrResourceSyncError"
-	// SuccessSkipped is used as part of the Event 'reason' when a MachineLearningAlgorithm is skipped from processing
-	SuccessSkipped = "Skipped"
 
 	// MessageResourceExists is the message used for Events when a resource
 	// fails to sync due to one of: MLA CR, Secret owned by MLA CR, ConfigMap owned by MLA CR already existing
@@ -71,8 +69,7 @@ const (
 	// MessageResourceMissing is the message used for an Event fired when a MachineLearningAlgorithm references a missing Secret or a ConfigMap
 	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm %q is missing in the controller cluster"
 	// MessageResourceOperationFailed is the message used for an Event fired in case of fatal exceptions occurring during Secret/Configmap sync
-	MessageResourceOperationFailed = "Synchronization of a resource %q referenced by MachineLearningAlgorithm %q failed with a fatal error %s"
-	MessageResourceSkipped         = "Resource %q skipped, controller launched in dev mode"
+	MessageResourceOperationFailed = "Synchronization/update of a resource %q referenced by MachineLearningAlgorithm %q failed with a fatal error %s"
 	// FieldManager distinguishes this controller from other things writing to API objects
 	FieldManager = controllerAgentName
 )
@@ -554,6 +551,7 @@ func (c *Controller) adoptReferences(mla *v1.MachineLearningAlgorithm) error {
 	for _, secretName := range mla.GetSecretNames() {
 		referencedSecret, err := c.secretLister.Secrets(mla.Namespace).Get(secretName)
 		if err != nil {
+			c.recorder.Event(mla, corev1.EventTypeWarning, ErrResourceMissing, fmt.Sprintf(MessageResourceMissing, secretName, mla.Name))
 			return err
 		}
 		refCopy := referencedSecret.DeepCopy()
@@ -567,6 +565,7 @@ func (c *Controller) adoptReferences(mla *v1.MachineLearningAlgorithm) error {
 
 			_, err := c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Update(context.TODO(), refCopy, metav1.UpdateOptions{})
 			if err != nil {
+				c.recorder.Event(mla, corev1.EventTypeWarning, ErrResourceSyncError, fmt.Sprintf(MessageResourceOperationFailed, secretName, mla.Name, err))
 				return err
 			}
 		}
@@ -575,6 +574,7 @@ func (c *Controller) adoptReferences(mla *v1.MachineLearningAlgorithm) error {
 	for _, configMapName := range mla.GetConfigMapNames() {
 		referencedConfgMap, err := c.configMapLister.ConfigMaps(mla.Namespace).Get(configMapName)
 		if err != nil {
+			c.recorder.Event(mla, corev1.EventTypeWarning, ErrResourceMissing, fmt.Sprintf(MessageResourceMissing, configMapName, mla.Name))
 			return err
 		}
 		refCopy := referencedConfgMap.DeepCopy()
@@ -588,6 +588,7 @@ func (c *Controller) adoptReferences(mla *v1.MachineLearningAlgorithm) error {
 
 			_, err := c.controllerkubeclientset.CoreV1().ConfigMaps(mla.Namespace).Update(context.TODO(), refCopy, metav1.UpdateOptions{})
 			if err != nil {
+				c.recorder.Event(mla, corev1.EventTypeWarning, ErrResourceSyncError, fmt.Sprintf(MessageResourceOperationFailed, configMapName, mla.Name, err))
 				return err
 			}
 		}
