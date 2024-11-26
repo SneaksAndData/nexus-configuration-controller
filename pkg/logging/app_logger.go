@@ -65,17 +65,28 @@ func newDatadogClient(endpoint string, apiKey string, rootCtx context.Context) (
 	return apiClient, ctx
 }
 
-func ConfigureLogger(ctx context.Context, globalTags map[string]string) (*slog.Logger, error) { // coverage-ignore
-	loggerConfig, err := NewDatadogLoggerConfiguration()
-	// in case DD logger cannot be configured, use text handler and return error so we can warn the user they are not getting DD logs recorded
+func parseSLogLevel(levelText string) slog.Level {
+	var level slog.Level
+	var err = level.UnmarshalText([]byte(levelText))
 	if err != nil {
-		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})), err
+		return slog.LevelInfo
+	}
+
+	return level
+}
+
+func ConfigureLogger(ctx context.Context, globalTags map[string]string, logLevel string) (*slog.Logger, error) { // coverage-ignore
+	slogLevel := parseSLogLevel(logLevel)
+	loggerConfig, err := NewDatadogLoggerConfiguration()
+	// in case DD logger cannot be configured, use text handler and return error, so we can warn the user they are not getting DD logs recorded
+	if err != nil {
+		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel})), err
 	}
 	apiClient, ctx := newDatadogClient(loggerConfig.Endpoint, loggerConfig.ApiKey, ctx)
 	return slog.New(
 		slogmulti.Fanout(
-			slogdatadog.Option{Level: slog.LevelDebug, Client: apiClient, Context: ctx, Timeout: 5 * time.Second, Hostname: loggerConfig.Hostname, Service: loggerConfig.ServiceName, GlobalTags: globalTags}.NewDatadogHandler(), // first send to Datadog handler
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}), // then to second handler: stdout
+			slogdatadog.Option{Level: slogLevel, Client: apiClient, Context: ctx, Timeout: 5 * time.Second, Hostname: loggerConfig.Hostname, Service: loggerConfig.ServiceName, GlobalTags: globalTags}.NewDatadogHandler(), // first send to Datadog handler
+			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel}), // then to second handler: stdout
 		),
 	), nil
 }
