@@ -572,13 +572,13 @@ func (c *Controller) adoptReferences(mla *v1.MachineLearningAlgorithm) error {
 	}
 
 	for _, configMapName := range mla.GetConfigMapNames() {
-		referencedConfgMap, err := c.configMapLister.ConfigMaps(mla.Namespace).Get(configMapName)
+		referencedConfigMap, err := c.configMapLister.ConfigMaps(mla.Namespace).Get(configMapName)
 		if err != nil {
 			c.recorder.Event(mla, corev1.EventTypeWarning, ErrResourceMissing, fmt.Sprintf(MessageResourceMissing, configMapName, mla.Name))
 			return err
 		}
-		refCopy := referencedConfgMap.DeepCopy()
-		if !c.isOwnedBy(referencedConfgMap.ObjectMeta, mla) {
+		refCopy := referencedConfigMap.DeepCopy()
+		if !c.isOwnedBy(referencedConfigMap.ObjectMeta, mla) {
 			refCopy.OwnerReferences = append(refCopy.OwnerReferences, metav1.OwnerReference{
 				APIVersion: v1.SchemeGroupVersion.String(),
 				Kind:       "MachineLearningAlgorithm",
