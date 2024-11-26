@@ -174,8 +174,11 @@ controller:
     # Datadog endpoint to sink logs to
     endpoint: "datadoghq.eu"
     
-    # Datadog API Key to use for log submissions
-    apiKey: "key"
+    # A name for a Secret resource that contains Datadog API Key to use for log submissions
+    apiKeySecret: "secretName"
+
+    # A key in the Secret that contains Datadog API Key    
+    apiKeySecretKey: "secretKey"
     
     # Datadog Service Name parameter
     serviceName: "nexus-configuration-controller"
