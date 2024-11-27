@@ -333,7 +333,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	// put back on the workqueue and attempted again after a back-off
 	// period.
 	defer c.workqueue.Done(objRef)
-	defer telemetry.Gauge(metrics, telemetry.ReconcileLatencyMetric, float64(time.Since(itemProcessStart).Milliseconds()), []string{}, 1)
+	defer telemetry.GaugeDuration(metrics, telemetry.ReconcileLatencyMetric, itemProcessStart, []string{}, 1)
 	defer telemetry.Gauge(metrics, telemetry.WorkqueueLengthMetric, float64(c.workqueue.Len()), []string{}, 1)
 
 	// Run the syncHandler, passing it the structured reference to the object to be synced.
