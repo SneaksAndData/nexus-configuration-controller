@@ -4,6 +4,7 @@ go 1.23.1
 
 require (
 	github.com/DataDog/datadog-api-client-go/v2 v2.11.0
+	github.com/DataDog/datadog-go/v5 v5.5.0
 	github.com/samber/slog-datadog/v2 v2.8.0
 	github.com/samber/slog-multi v1.2.4
 	golang.org/x/time v0.3.0
@@ -16,6 +17,7 @@ require (
 
 require (
 	github.com/DataDog/zstd v1.5.2 // indirect
+	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect

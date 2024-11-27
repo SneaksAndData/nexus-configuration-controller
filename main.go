@@ -26,9 +26,9 @@ import (
 	"path"
 	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
 	informers "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/informers/externalversions"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/logging"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/signals"
+	"science.sneaksanddata.com/nexus-configuration-controller/pkg/telemetry"
 	"strings"
 	"time"
 )
@@ -65,7 +65,8 @@ func main() {
 
 	// set up signals so we handle the shutdown signal gracefully
 	ctx := signals.SetupSignalHandler()
-	appLogger, err := logging.ConfigureLogger(ctx, map[string]string{}, logLevel)
+	appLogger, err := telemetry.ConfigureLogger(ctx, map[string]string{}, logLevel)
+	ctx = telemetry.WithStatsd(ctx)
 	klog.SetSlogLogger(appLogger)
 	logger := klog.FromContext(ctx)
 
