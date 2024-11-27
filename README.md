@@ -23,6 +23,7 @@ metadata:
 immutable: true
 data:
   my-k8s-cluster-0.kubeconfig: base64(kubeconfig for my-k8s-cluster-0)
+  my-k8s-cluster-1.kubeconfig: base64(kubeconfig for my-k8s-cluster-1)
 type: Opaque
 ```
 
