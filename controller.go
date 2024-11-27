@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,6 +39,7 @@ import (
 	v1 "science.sneaksanddata.com/nexus-configuration-controller/pkg/apis/science/v1"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned/scheme"
 	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
+	"science.sneaksanddata.com/nexus-configuration-controller/pkg/telemetry"
 	"time"
 
 	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
@@ -317,6 +319,8 @@ func (c *Controller) runWorker(ctx context.Context) {
 func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
 	objRef, shutdown := c.workqueue.Get()
 	logger := klog.FromContext(ctx)
+	metrics := ctx.Value("metrics").(*statsd.Client)
+	itemProcessStart := time.Now()
 
 	if shutdown {
 		return false
@@ -329,6 +333,8 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	// put back on the workqueue and attempted again after a back-off
 	// period.
 	defer c.workqueue.Done(objRef)
+	defer telemetry.GaugeDuration(metrics, telemetry.ReconcileLatencyMetric, itemProcessStart, []string{}, 1)
+	defer telemetry.Gauge(metrics, telemetry.WorkqueueLengthMetric, float64(c.workqueue.Len()), []string{}, 1)
 
 	// Run the syncHandler, passing it the structured reference to the object to be synced.
 	err := c.syncHandler(ctx, objRef)

@@ -78,8 +78,20 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          {{- if .Values.controller.datadog.enableOriginDetection }}
+            - name: DD_ENTITY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          {{- end }}
             - name: DATADOG__SERVICE_NAME
               value: {{ .Values.controller.datadog.serviceName }}
+            - name: DD_SERVICE
+              value: {{ .Values.controller.datadog.serviceName }}
+            - name: DD_VERSION
+              value: "{{ (default (printf "v%s" .Chart.AppVersion) .Values.image.tag) }}"
+            - name: DD_DOGSTATSD_URL
+              value: {{ .Values.controller.datadog.statsdUrl | quote }}              
           {{- end }}
           {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -93,6 +105,11 @@ spec:
           volumeMounts:
           - name: shards-kube-config
             mountPath: {{ .Values.controller.shardsConfigPath }}
+        {{- if .Values.controller.datadog.enabled }}
+          - name: dsdsocket
+            mountPath: /var/run/datadog
+            readOnly: false
+        {{- end }}
           {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -104,6 +121,11 @@ spec:
         - name: shards-kube-config
           secret:
             secretName: {{ .Values.controller.shardsConfigSecretName }}
+       {{- if .Values.controller.datadog.enabled }}
+        - name: dsdsocket
+          hostPath:
+            path: /var/run/datadog/
+       {{- end }}
           {{- with .Values.extraVolumes }}
             {{- toYaml . | nindent 8 }}
           {{- end }}

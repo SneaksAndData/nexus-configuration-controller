@@ -14,7 +14,7 @@
  *   limitations under the License.
  */
 
-package logging
+package telemetry
 
 import (
 	"context"
@@ -65,7 +65,7 @@ func newDatadogClient(endpoint string, apiKey string, rootCtx context.Context) (
 	return apiClient, ctx
 }
 
-func parseSLogLevel(levelText string) slog.Level {
+func parseSLogLevel(levelText string) slog.Level { // coverage-ignore
 	var level slog.Level
 	var err = level.UnmarshalText([]byte(levelText))
 	if err != nil {

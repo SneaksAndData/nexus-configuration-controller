@@ -1,4 +1,4 @@
-environment: "Production"
+environment: "Development"
 
 image:
   # Repository to pull the image from
@@ -182,3 +182,11 @@ controller:
     
     # Datadog Service Name parameter
     serviceName: "nexus-configuration-controller"
+    
+    # value to use as a DogStatsd server url
+    # Examples: udp://127.0.0.1:8125 or unix:///path/to/dsd.socket
+    # https://github.com/DataDog/datadog-go?tab=readme-ov-file#unix-domain-sockets-client
+    statsdUrl: unix:///var/run/datadog/dsd.socket
+    
+    # enables metric origin detection by setting DD_ENTITY_ID
+    enableOriginDetection: true
