@@ -318,7 +318,6 @@ func (c *Controller) runWorker(ctx context.Context) {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
 	objRef, shutdown := c.workqueue.Get()
-	logger := klog.FromContext(ctx)
 	metrics := ctx.Value("metrics").(*statsd.Client)
 	itemProcessStart := time.Now()
 
@@ -342,7 +341,6 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 		// If no error occurs then we Forget this item so it does not
 		// get queued again until another change happens.
 		c.workqueue.Forget(objRef)
-		logger.Info("Successfully synced", "objectName", objRef)
 		return true
 	}
 	// there was a failure so be sure to report it.  This method allows for
