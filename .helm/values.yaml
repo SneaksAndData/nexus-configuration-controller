@@ -177,7 +177,7 @@ controller:
     # A name for a Secret resource that contains Datadog API Key to use for log submissions
     apiKeySecret: "secretName"
 
-    # A key in the Secret that contains Datadog API Key    
+    # a key in the secret that contains datadog api key    
     apiKeySecretKey: "secretKey"
     
     # Datadog Service Name parameter

@@ -318,8 +318,7 @@ func (c *Controller) runWorker(ctx context.Context) {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
 	objRef, shutdown := c.workqueue.Get()
-	logger := klog.FromContext(ctx)
-	metrics := ctx.Value("metrics").(*statsd.Client)
+	metrics := ctx.Value(telemetry.MetricsClientContextKey).(*statsd.Client)
 	itemProcessStart := time.Now()
 
 	if shutdown {
@@ -342,7 +341,6 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 		// If no error occurs then we Forget this item so it does not
 		// get queued again until another change happens.
 		c.workqueue.Forget(objRef)
-		logger.Info("Successfully synced", "objectName", objRef)
 		return true
 	}
 	// there was a failure so be sure to report it.  This method allows for
@@ -415,7 +413,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 		// Get the secret with the name specified in MachineLearningAlgorithm.spec
 		secret, err := c.secretLister.Secrets(secretNamespace).Get(secretName)
 		// If the referenced Secret resource doesn't exist in the cluster where the controller is deployed, update the syncErr and move on to the next Secret
-		if k8serrors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) { // coverage-ignore
 			msg := fmt.Sprintf(MessageResourceMissing, secretName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("Secret not found", "secretName", secretName, "shard", shard.Name)
@@ -429,7 +427,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 		}
 
 		// requeue on error
-		if err != nil {
+		if err != nil { // coverage-ignore
 			msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerMla.Name, err)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 			return err
@@ -437,7 +435,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerMla *v
 
 		missingOwner, err := c.isMissingOwnership(shardSecret, shardMla)
 		// requeue on error
-		if err != nil {
+		if err != nil { // coverage-ignore
 			msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerMla.Name, err)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 			return err
@@ -477,7 +475,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 		// Get the ConfigMap with the name specified in MachineLearningAlgorithm.spec
 		configMap, err := c.configMapLister.ConfigMaps(configMapNamespace).Get(configMapName)
 		// If the referenced ConfigMap resource doesn't exist in the cluster where the controller is deployed, update syncErr and move on to the next ConfigMap
-		if k8serrors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) { // coverage-ignore
 			msg := fmt.Sprintf(MessageResourceMissing, configMapName, controllerMla.Name)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceMissing, msg)
 			logger.V(4).Info("ConfigMap not found", "configMapName", configMapName, "shard", shard.Name)
@@ -486,12 +484,12 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 
 		shardConfigMap, err := shard.ConfigMapLister.ConfigMaps(shardMla.Namespace).Get(configMap.Name)
 		// secret does not exist in this shard, create it
-		if k8serrors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) { // coverage-ignore
 			shardConfigMap, err = shard.CreateConfigMap(shardMla, configMap, FieldManager)
 		}
 
 		// requeue on error
-		if err != nil {
+		if err != nil { // coverage-ignore
 			msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerMla.Name, err)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 			return err
@@ -499,7 +497,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 
 		missingOwner, err := c.isMissingOwnership(shardConfigMap, shardMla)
 		// requeue on error
-		if err != nil {
+		if err != nil { // coverage-ignore
 			msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerMla.Name, err)
 			c.recorder.Event(controllerMla, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 			return err

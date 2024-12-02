@@ -22,6 +22,8 @@ import (
 	"time"
 )
 
+type contextKey string
+
 const (
 	// MetricsNamespace sets the datadog metrics namespace to use
 	MetricsNamespace = "ncc"
@@ -31,13 +33,15 @@ const (
 
 	// WorkqueueLengthMetric name for statsd
 	WorkqueueLengthMetric = "workqueue_length"
+
+	MetricsClientContextKey contextKey = "metrics"
 )
 
 // WithStatsd enriches the context with a statsd client if it can be instantiated
 func WithStatsd(ctx context.Context) context.Context { // coverage-ignore
 	statsdClient, err := statsd.New("", statsd.WithNamespace(MetricsNamespace))
 	if err == nil {
-		return context.WithValue(ctx, "metrics", statsdClient)
+		return context.WithValue(ctx, MetricsClientContextKey, statsdClient)
 	}
 
 	return ctx
@@ -45,17 +49,11 @@ func WithStatsd(ctx context.Context) context.Context { // coverage-ignore
 
 // Gauge reports a GAUGE metric using best-effort approach
 func Gauge(metrics *statsd.Client, name string, value float64, tags []string, rate float64) { // coverage-ignore
-	err := metrics.Gauge(name, value, tags, rate)
-	if err != nil {
-		// do nothing
-	}
+	_ = metrics.Gauge(name, value, tags, rate)
 }
 
 // GaugeDuration reports a GAUGE metric corresponding to a duration of an operation that started at a specified time, in milliseconds
 func GaugeDuration(metrics *statsd.Client, name string, startedAt time.Time, tags []string, rate float64) { // coverage-ignore
 	duration := time.Since(startedAt).Milliseconds()
-	err := metrics.Gauge(name, float64(duration), tags, rate)
-	if err != nil {
-		// do nothing
-	}
+	_ = metrics.Gauge(name, float64(duration), tags, rate)
 }
