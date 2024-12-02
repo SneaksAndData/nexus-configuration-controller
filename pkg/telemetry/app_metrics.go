@@ -22,6 +22,8 @@ import (
 	"time"
 )
 
+type contextKey string
+
 const (
 	// MetricsNamespace sets the datadog metrics namespace to use
 	MetricsNamespace = "ncc"
@@ -31,13 +33,15 @@ const (
 
 	// WorkqueueLengthMetric name for statsd
 	WorkqueueLengthMetric = "workqueue_length"
+
+	MetricsClientContextKey contextKey = "metrics"
 )
 
 // WithStatsd enriches the context with a statsd client if it can be instantiated
 func WithStatsd(ctx context.Context) context.Context { // coverage-ignore
 	statsdClient, err := statsd.New("", statsd.WithNamespace(MetricsNamespace))
 	if err == nil {
-		return context.WithValue(ctx, "metrics", statsdClient)
+		return context.WithValue(ctx, MetricsClientContextKey, statsdClient)
 	}
 
 	return ctx

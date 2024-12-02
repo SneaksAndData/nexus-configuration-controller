@@ -318,7 +318,7 @@ func (c *Controller) runWorker(ctx context.Context) {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
 	objRef, shutdown := c.workqueue.Get()
-	metrics := ctx.Value("metrics").(*statsd.Client)
+	metrics := ctx.Value(telemetry.MetricsClientContextKey).(*statsd.Client)
 	itemProcessStart := time.Now()
 
 	if shutdown {
