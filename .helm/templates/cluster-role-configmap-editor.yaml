@@ -25,5 +25,6 @@ rules:
     apiGroups:
       - ""
     resources:
+      - events
       - configmaps
 {{- end }}
