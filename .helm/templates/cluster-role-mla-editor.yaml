@@ -25,6 +25,7 @@ rules:
     apiGroups:
       - "science.sneaksanddata.com"
     resources:
+      - events
       - machinelearningalgorithms
       - machinelearningalgorithms/status
       - machinelearningalgorithm
