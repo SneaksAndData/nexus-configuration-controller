@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/fake"
+	sharding "github.com/SneaksAndData/nexus-core/pkg/shards"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
@@ -26,18 +28,16 @@ import (
 	"k8s.io/client-go/tools/record"
 	ktesting "k8s.io/klog/v2/ktesting"
 	"reflect"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned/fake"
-	sharding "science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
 	"testing"
 	"time"
 
+	nexuscontroller "github.com/SneaksAndData/nexus-core/pkg/apis/science/v1"
+	informers "github.com/SneaksAndData/nexus-core/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
-	nexuscontroller "science.sneaksanddata.com/nexus-configuration-controller/pkg/apis/science/v1"
-	informers "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/informers/externalversions"
 )
 
 var (

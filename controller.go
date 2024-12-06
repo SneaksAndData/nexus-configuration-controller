@@ -20,6 +20,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/DataDog/datadog-go/v5/statsd"
+	v1 "github.com/SneaksAndData/nexus-core/pkg/apis/science/v1"
+	"github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/scheme"
+	"github.com/SneaksAndData/nexus-core/pkg/shards"
+	"github.com/SneaksAndData/nexus-core/pkg/telemetry"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,16 +40,20 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"reflect"
-	v1 "science.sneaksanddata.com/nexus-configuration-controller/pkg/apis/science/v1"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned/scheme"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/telemetry"
 	"time"
 
-	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
-	nexusscheme "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned/scheme"
-	nexusinformers "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/informers/externalversions/science/v1"
-	nexuslisters "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/listers/science/v1"
+	clientset "github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned"
+	nexusscheme "github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/scheme"
+	nexusinformers "github.com/SneaksAndData/nexus-core/pkg/generated/informers/externalversions/science/v1"
+	nexuslisters "github.com/SneaksAndData/nexus-core/pkg/generated/listers/science/v1"
+)
+
+const (
+	// ReconcileLatencyMetric name for statsd
+	ReconcileLatencyMetric = "reconcile_latency"
+
+	// WorkqueueLengthMetric name for statsd
+	WorkqueueLengthMetric = "workqueue_length"
 )
 
 const controllerAgentName = "nexus-configuration-controller"
@@ -332,8 +340,8 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	// put back on the workqueue and attempted again after a back-off
 	// period.
 	defer c.workqueue.Done(objRef)
-	defer telemetry.GaugeDuration(metrics, telemetry.ReconcileLatencyMetric, itemProcessStart, []string{}, 1)
-	defer telemetry.Gauge(metrics, telemetry.WorkqueueLengthMetric, float64(c.workqueue.Len()), []string{}, 1)
+	defer telemetry.GaugeDuration(metrics, ReconcileLatencyMetric, itemProcessStart, []string{}, 1)
+	defer telemetry.Gauge(metrics, WorkqueueLengthMetric, float64(c.workqueue.Len()), []string{}, 1)
 
 	// Run the syncHandler, passing it the structured reference to the object to be synced.
 	err := c.syncHandler(ctx, objRef)

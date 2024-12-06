@@ -18,17 +18,17 @@ package main
 
 import (
 	"flag"
+	clientset "github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned"
+	informers "github.com/SneaksAndData/nexus-core/pkg/generated/informers/externalversions"
+	"github.com/SneaksAndData/nexus-core/pkg/shards"
+	"github.com/SneaksAndData/nexus-core/pkg/signals"
+	"github.com/SneaksAndData/nexus-core/pkg/telemetry"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	"os"
 	"path"
-	clientset "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/clientset/versioned"
-	informers "science.sneaksanddata.com/nexus-configuration-controller/pkg/generated/informers/externalversions"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/shards"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/signals"
-	"science.sneaksanddata.com/nexus-configuration-controller/pkg/telemetry"
 	"strings"
 	"time"
 )
