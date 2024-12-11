@@ -133,6 +133,30 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 	}
 }
 
+func (c *Controller) handleDereference(mla *v1.MachineLearningAlgorithm, dereferencedSecretNames []string, dereferencedConfigMapNames []string) error {
+	if len(dereferencedSecretNames) > 0 {
+		// first remove owner references in all clusters
+		// handle controller cluster first
+		for _, secretName := range dereferencedSecretNames {
+			secret, err := c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Get(context.TODO(), secretName, metav1.GetOptions{}) // TODO: add event
+			if err != nil {
+				return err
+			}
+			newSecret := secret.DeepCopy()
+			newReferences := []metav1.OwnerReference{}
+			for _, ownerRef := range newSecret.OwnerReferences {
+				if ownerRef.UID != mla.UID {
+					newReferences = append(newReferences, ownerRef)
+				}
+			}
+			newSecret.OwnerReferences = newReferences
+			_, _ = c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Update(context.TODO(), newSecret, metav1.UpdateOptions{}) // TODO: add event
+		}
+	}
+
+	return nil
+}
+
 // handleObject will take any resource implementing metav1.Object and attempt
 // to find the MachineLearningAlgorithm resource that 'owns' it. It does this by looking at the
 // objects metadata.ownerReferences field for an appropriate OwnerReference.
@@ -252,6 +276,17 @@ func NewController(
 	_, handlerErr := controllerMlaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueMachineLearningAlgorithm,
 		UpdateFunc: func(old, new interface{}) {
+			oldMla := old.(*v1.MachineLearningAlgorithm)
+			newMla := new.(*v1.MachineLearningAlgorithm)
+			if newMla.ResourceVersion == oldMla.ResourceVersion {
+				return
+			}
+
+			// handle resource dereferencing
+			controller.handleDereference(
+				GetReferenceDiff(oldMla.GetSecretNames, newMla.GetSecretNames),
+				GetReferenceDiff(oldMla.GetConfigMapNames, newMla.GetConfigMapNames))
+
 			controller.enqueueMachineLearningAlgorithm(new)
 		},
 		DeleteFunc: controller.handleObject,
