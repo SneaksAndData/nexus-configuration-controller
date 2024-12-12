@@ -24,6 +24,7 @@ import (
 	"github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/scheme"
 	"github.com/SneaksAndData/nexus-core/pkg/shards"
 	"github.com/SneaksAndData/nexus-core/pkg/telemetry"
+	"github.com/SneaksAndData/nexus-core/pkg/util"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -133,28 +134,116 @@ func (c *Controller) enqueueMachineLearningAlgorithm(obj interface{}) {
 	}
 }
 
-func (c *Controller) handleDereference(mla *v1.MachineLearningAlgorithm, dereferencedSecretNames []string, dereferencedConfigMapNames []string) error {
+func (c *Controller) handleDereferencedSecrets(mla *v1.MachineLearningAlgorithm, dereferencedSecretNames []string) {
+	logger := klog.FromContext(context.Background())
 	if len(dereferencedSecretNames) > 0 {
 		// first remove owner references in all clusters
 		// handle controller cluster first
+		// in the controller cluster we only **remove** references, but do not delete the referenced resources
 		for _, secretName := range dereferencedSecretNames {
-			secret, err := c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Get(context.TODO(), secretName, metav1.GetOptions{}) // TODO: add event
+			secret, err := c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+			// dereferenced secret does not exist - report warning to logger only and continue to next one
 			if err != nil {
-				return err
+				logger.V(3).Info("Dereferenced resource no longer exists", "resource", secretName)
+				continue
 			}
-			newSecret := secret.DeepCopy()
-			newReferences := []metav1.OwnerReference{}
-			for _, ownerRef := range newSecret.OwnerReferences {
-				if ownerRef.UID != mla.UID {
-					newReferences = append(newReferences, ownerRef)
+			_, err = util.RemoveOwner[corev1.Secret](context.TODO(), secret, mla.UID, c.controllerkubeclientset, FieldManager)
+			if err != nil {
+				// if owner removal fails, handle error and continue to the next one
+				utilruntime.HandleErrorWithContext(context.Background(), nil, "Unable to update owners on the dereferenced secret", "secret", secretName)
+				continue
+			}
+			// now do the same in all shards
+			for _, shard := range c.nexusShards {
+				// remove owner reference first
+				shardMla, err := shard.MlaLister.MachineLearningAlgorithms(mla.Namespace).Get(mla.Name)
+				// if shardMla is missing, skip processing
+				if k8serrors.IsNotFound(err) {
+					continue
+				}
+				// on a different error, handle it and return
+				if err != nil {
+					utilruntime.HandleErrorWithContext(context.Background(), nil, "Error retrieving a shard algorithm resource", "algorithm", mla.Name)
+					return
+				}
+				shardSecret, err := shard.SecretLister.Secrets(mla.Namespace).Get(secretName)
+				// if a secret is gone already, simply continue
+				if k8serrors.IsNotFound(err) {
+					continue
+				}
+				// otherwise, handle and return
+				if err != nil {
+					utilruntime.HandleErrorWithContext(context.Background(), nil, "Error retrieving a secret referenced by a shard algorithm resource", "secret", secretName)
+					return
+				}
+
+				err = shard.DereferenceSecret(shardSecret, shardMla, FieldManager)
+				// if unable to dereference, handle and return
+				if err != nil {
+					utilruntime.HandleErrorWithContext(context.Background(), nil, "Error dereferencing a secret previously referenced by a shard algorithm resource", "secret", secretName, "algorithm", mla.Name)
+					return
 				}
 			}
-			newSecret.OwnerReferences = newReferences
-			_, _ = c.controllerkubeclientset.CoreV1().Secrets(mla.Namespace).Update(context.TODO(), newSecret, metav1.UpdateOptions{}) // TODO: add event
 		}
 	}
 
-	return nil
+	return
+}
+
+func (c *Controller) handleDereferencedConfigMaps(mla *v1.MachineLearningAlgorithm, dereferencedConfigMapNames []string) {
+	logger := klog.FromContext(context.Background())
+	if len(dereferencedConfigMapNames) > 0 {
+		// first remove owner references in all clusters
+		// handle controller cluster first
+		// in the controller cluster we only **remove** references, but do not delete the referenced resources
+		for _, configMapName := range dereferencedConfigMapNames {
+			configMap, err := c.controllerkubeclientset.CoreV1().ConfigMaps(mla.Namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+			// dereferenced configMap does not exist - report warning to logger only and continue to next one
+			if err != nil {
+				logger.V(3).Info("Dereferenced resource no longer exists", "resource", configMapName)
+				continue
+			}
+			_, err = util.RemoveOwner[corev1.ConfigMap](context.TODO(), configMap, mla.UID, c.controllerkubeclientset, FieldManager)
+			if err != nil {
+				// if owner removal fails, handle error and continue to the next one
+				utilruntime.HandleErrorWithContext(context.Background(), nil, "Unable to update owners on the dereferenced configMap", "configMap", configMapName)
+				continue
+			}
+			// now do the same in all shards
+			for _, shard := range c.nexusShards {
+				// remove owner reference first
+				shardMla, err := shard.MlaLister.MachineLearningAlgorithms(mla.Namespace).Get(mla.Name)
+				// if shardMla is missing, skip processing
+				if k8serrors.IsNotFound(err) {
+					continue
+				}
+				// on a different error, handle it and return
+				if err != nil {
+					utilruntime.HandleErrorWithContext(context.Background(), nil, "Error retrieving a shard algorithm resource", "algorithm", mla.Name)
+					return
+				}
+				shardConfigMap, err := shard.ConfigMapLister.ConfigMaps(mla.Namespace).Get(configMapName)
+				// if a configMap is gone already, simply continue
+				if k8serrors.IsNotFound(err) {
+					continue
+				}
+				// otherwise, handle and return
+				if err != nil {
+					utilruntime.HandleErrorWithContext(context.Background(), nil, "Error retrieving a configMap referenced by a shard algorithm resource", "configMap", configMapName)
+					return
+				}
+
+				err = shard.DereferenceConfigMap(shardConfigMap, shardMla, FieldManager)
+				// if unable to dereference, handle and return
+				if err != nil {
+					utilruntime.HandleErrorWithContext(context.Background(), nil, "Error dereferencing a configMap previously referenced by a shard algorithm resource", "configMap", configMapName, "algorithm", mla.Name)
+					return
+				}
+			}
+		}
+	}
+
+	return
 }
 
 // handleObject will take any resource implementing metav1.Object and attempt
@@ -283,10 +372,10 @@ func NewController(
 			}
 
 			// handle resource dereferencing
-			controller.handleDereference(
-				GetReferenceDiff(oldMla.GetSecretNames, newMla.GetSecretNames),
-				GetReferenceDiff(oldMla.GetConfigMapNames, newMla.GetConfigMapNames))
+			controller.handleDereferencedSecrets(newMla, oldMla.GetSecretDiff(newMla))
+			controller.handleDereferencedConfigMaps(newMla, oldMla.GetConfigmapDiff(newMla))
 
+			// engqueue algorithm for update
 			controller.enqueueMachineLearningAlgorithm(new)
 		},
 		DeleteFunc: controller.handleObject,
