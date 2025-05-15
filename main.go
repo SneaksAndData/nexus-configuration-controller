@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024. ECCO Data & AI Open-Source Project Maintainers.
+ * Copyright (c) 2024-2025. ECCO Data & AI Open-Source Project Maintainers.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +27,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
-	"os"
-	"path"
-	"strings"
 	"time"
 )
 
@@ -46,6 +43,7 @@ var (
 	rateLimitElementsBurst     int
 )
 
+// TODO: change to config (Viper)
 func init() {
 	flag.StringVar(&shardConfigPath, "shards-cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
 	flag.StringVar(&controllerConfigPath, "controller-cfg", "", "Path to a kubeconfig file for the controller cluster.")
@@ -66,7 +64,7 @@ func main() {
 	// set up signals so we handle the shutdown signal gracefully
 	ctx := signals.SetupSignalHandler()
 	appLogger, err := telemetry.ConfigureLogger(ctx, map[string]string{}, logLevel)
-	ctx = telemetry.WithStatsd(ctx)
+	ctx = telemetry.WithStatsd(ctx, "nexus_configuration_controller")
 	klog.SetSlogLogger(appLogger)
 	logger := klog.FromContext(ctx)
 
@@ -95,51 +93,16 @@ func main() {
 	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(controllerNamespace))
 	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(controllerNamespace))
 
-	files, err := os.ReadDir(shardConfigPath)
-	if err != nil {
-		logger.Error(err, "Error opening kubeconfig files for Shards")
+	shardClients, shardLoaderError := shards.LoadClients(shardConfigPath, controllerNamespace, logger)
+	if shardLoaderError != nil {
+		logger.Error(shardLoaderError, "unable to initialize shard clients")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-	connectedShards := make([]*shards.Shard, 0, len(files))
+	connectedShards := []*shards.Shard{}
 
 	// only load kubeconfig files in the provided location
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".kubeconfig") {
-			logger.Info("Loading Shard kubeconfig file", "file", file.Name())
-
-			cfg, err := clientcmd.BuildConfigFromFlags("", path.Join(shardConfigPath, file.Name()))
-			if err != nil {
-				logger.Error(err, "Error building kubeconfig for shard {shard}", file.Name())
-				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-			}
-
-			kubeClient, err := kubernetes.NewForConfig(cfg)
-			if err != nil {
-				logger.Error(err, "Error building kubernetes clientset for shard {shard}", file.Name())
-				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-			}
-
-			nexusClient, err := clientset.NewForConfig(cfg)
-			if err != nil {
-				logger.Error(err, "Error building kubernetes clientset for MachineLearningAlgorithm API for shard {shard}", file.Name())
-				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-			}
-
-			shardKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, time.Second*30, kubeinformers.WithNamespace(controllerNamespace))
-			shardNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(nexusClient, time.Second*30, informers.WithNamespace(controllerNamespace))
-
-			connectedShards = append(connectedShards, shards.NewShard(
-				alias,
-				strings.Split(file.Name(), ".")[0],
-				kubeClient,
-				nexusClient,
-				shardNexusInformerFactory.Science().V1().MachineLearningAlgorithms(),
-				shardKubeInformerFactory.Core().V1().Secrets(),
-				shardKubeInformerFactory.Core().V1().ConfigMaps()))
-
-			shardKubeInformerFactory.Start(ctx.Done())
-			shardNexusInformerFactory.Start(ctx.Done())
-		}
+	for _, shardClient := range shardClients {
+		connectedShards = append(connectedShards, shardClient.ToShard(controllerCfg.ServerName, ctx))
 	}
 
 	backOffBaseDelay, err := time.ParseDuration(failureRateBaseDelay)
@@ -164,7 +127,7 @@ func main() {
 		connectedShards,
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
-		controllerNexusInformerFactory.Science().V1().MachineLearningAlgorithms(),
+		controllerNexusInformerFactory.Science().V1().NexusAlgorithmTemplates(),
 		backOffBaseDelay,
 		backOffMaxDelay,
 		rateLimitElementsPerSecond,
