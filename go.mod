@@ -4,7 +4,7 @@ go 1.23.1
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.5.0
-	github.com/SneaksAndData/nexus-core v1.0.1-0.20250515113314-616e9339a624
+	github.com/SneaksAndData/nexus-core v1.0.1-0.20250516130932-483827d47dfe
 	github.com/aws/smithy-go v1.22.1
 	golang.org/x/time v0.8.0
 	k8s.io/api v0.31.3

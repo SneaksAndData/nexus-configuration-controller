@@ -169,7 +169,7 @@ func (c *Controller) handleObject(obj interface{}) {
 	case *v1.NexusAlgorithmTemplate:
 		logger.V(4).Info("Algorithm template resource deleted, removing it from shards", "template", klog.KObj(object))
 		for _, shard := range c.nexusShards {
-			deleteErr := shard.DeleteMachineLearningAlgorithm(object)
+			deleteErr := shard.DeleteTemplate(object)
 			if deleteErr != nil {
 				utilruntime.HandleErrorWithContext(context.Background(), nil, "Error deleting Template from a connected shard", "shard", shard.Name)
 				return
@@ -649,7 +649,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		// update this Template in case it exists and has drifted
 		if shardErr == nil && !reflect.DeepEqual(shardTemplate.Spec, template.Spec) {
 			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmTemplate %s, updating", template.Name))
-			shardTemplate, shardErr = shard.UpdateMachineLearningAlgorithm(shardTemplate, template.Spec, FieldManager)
+			shardTemplate, shardErr = shard.UpdateTemplate(shardTemplate, template.Spec, FieldManager)
 			// requeue on error
 			if shardErr != nil {
 				return shardErr
@@ -659,7 +659,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		// if NexusAlgorithmTemplate has not been created yet, create a new one in this shard
 		if k8serrors.IsNotFound(shardErr) {
 			logger.V(4).Info(fmt.Sprintf("Algorithm %s not found in shard %s, creating", objectRef.Name, shard.Name))
-			shardTemplate, shardErr = shard.CreateMachineLearningAlgorithm(template.Name, template.Namespace, template.Spec, FieldManager)
+			shardTemplate, shardErr = shard.CreateTemplate(template.Name, template.Namespace, template.Spec, FieldManager)
 		}
 
 		// requeue on error
