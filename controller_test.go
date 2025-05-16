@@ -56,12 +56,12 @@ type FakeControllerInformers = FakeInformers
 type FakeShardInformers = FakeInformers
 
 type ApiFixture struct {
-	mlaListResults       []*nexusv1.NexusAlgorithmTemplate
+	templateListResults  []*nexusv1.NexusAlgorithmTemplate
 	secretListResults    []*corev1.Secret
 	configMapListResults []*corev1.ConfigMap
 
-	existingCoreObjects []runtime.Object
-	existingMlaObjects  []runtime.Object
+	existingCoreObjects     []runtime.Object
+	existingTemplateObjects []runtime.Object
 }
 
 type ControllerFixture = ApiFixture
@@ -76,14 +76,14 @@ type fixture struct {
 	shardNexusClient *fake.Clientset
 	shardKubeClient  *k8sfake.Clientset
 	// Objects to put in the store for controller cluster
-	mlaLister       []*nexusv1.NexusAlgorithmTemplate
+	templateLister  []*nexusv1.NexusAlgorithmTemplate
 	secretLister    []*corev1.Secret
 	configMapLister []*corev1.ConfigMap
 
 	// Objects to put in the store for shard cluster
-	shardMlaLister    []*nexusv1.NexusAlgorithmTemplate
-	shardSecretLister []*corev1.Secret
-	shardConfigLister []*corev1.ConfigMap
+	shardTemplateLister []*nexusv1.NexusAlgorithmTemplate
+	shardSecretLister   []*corev1.Secret
+	shardConfigLister   []*corev1.ConfigMap
 
 	// Actions expected to happen on the controller and shard clients respectively.
 	controllerKubeActions  []core.Action
@@ -103,13 +103,13 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 
-	f.mlaLister = []*nexusv1.NexusAlgorithmTemplate{}
+	f.templateLister = []*nexusv1.NexusAlgorithmTemplate{}
 	f.secretLister = []*corev1.Secret{}
 	f.configMapLister = []*corev1.ConfigMap{}
 	f.controllerObjects = []runtime.Object{}
 	f.controllerKubeObjects = []runtime.Object{}
 
-	f.shardMlaLister = []*nexusv1.NexusAlgorithmTemplate{}
+	f.shardTemplateLister = []*nexusv1.NexusAlgorithmTemplate{}
 	f.shardSecretLister = []*corev1.Secret{}
 	f.shardConfigLister = []*corev1.ConfigMap{}
 	f.shardObjects = []runtime.Object{}
@@ -120,38 +120,36 @@ func newFixture(t *testing.T) *fixture {
 // configure adds necessary mock return results for Kubernetes API calls for the respective listers
 // and adds existing objects to the respective containers
 func (f *fixture) configure(controllerFixture *ControllerFixture, nexusShardFixture *NexusFixture) *fixture {
-	f.mlaLister = append(f.mlaLister, controllerFixture.mlaListResults...)
+	f.templateLister = append(f.templateLister, controllerFixture.templateListResults...)
 	f.secretLister = append(f.secretLister, controllerFixture.secretListResults...)
 	f.configMapLister = append(f.configMapLister, controllerFixture.configMapListResults...)
-	f.controllerObjects = append(f.controllerObjects, controllerFixture.existingMlaObjects...)
+	f.controllerObjects = append(f.controllerObjects, controllerFixture.existingTemplateObjects...)
 	f.controllerKubeObjects = append(f.controllerKubeObjects, controllerFixture.existingCoreObjects...)
 
-	f.shardMlaLister = append(f.shardMlaLister, nexusShardFixture.mlaListResults...)
+	f.shardTemplateLister = append(f.shardTemplateLister, nexusShardFixture.templateListResults...)
 	f.shardSecretLister = append(f.shardSecretLister, nexusShardFixture.secretListResults...)
 	f.shardConfigLister = append(f.shardConfigLister, nexusShardFixture.configMapListResults...)
-	f.shardObjects = append(f.shardObjects, nexusShardFixture.existingMlaObjects...)
+	f.shardObjects = append(f.shardObjects, nexusShardFixture.existingTemplateObjects...)
 	f.shardKubeObjects = append(f.shardKubeObjects, nexusShardFixture.existingCoreObjects...)
 
 	return f
 }
 
-func int32Ptr(i int32) *int32 { return &i }
-
-func expectedMla(mla *nexusv1.NexusAlgorithmTemplate, secret *corev1.Secret, configMap *corev1.ConfigMap, syncedTo []string, conditions []metav1.Condition) *nexusv1.NexusAlgorithmTemplate {
-	mlaCopy := mla.DeepCopy()
-	mlaCopy.Status.Conditions = conditions
+func expectedTemplate(template *nexusv1.NexusAlgorithmTemplate, secret *corev1.Secret, configMap *corev1.ConfigMap, syncedTo []string, conditions []metav1.Condition) *nexusv1.NexusAlgorithmTemplate {
+	templateCopy := template.DeepCopy()
+	templateCopy.Status.Conditions = conditions
 	if secret != nil {
-		mlaCopy.Status.SyncedSecrets = []string{secret.Name}
+		templateCopy.Status.SyncedSecrets = []string{secret.Name}
 	}
 
 	if configMap != nil {
-		mlaCopy.Status.SyncedConfigurations = []string{configMap.Name}
+		templateCopy.Status.SyncedConfigurations = []string{configMap.Name}
 	}
 	if syncedTo != nil {
-		mlaCopy.Status.SyncedToClusters = syncedTo
+		templateCopy.Status.SyncedToClusters = syncedTo
 	}
 
-	return mlaCopy
+	return templateCopy
 }
 
 func expectedLabels() map[string]string {
@@ -161,47 +159,47 @@ func expectedLabels() map[string]string {
 	}
 }
 
-func expectedShardMla(mla *nexusv1.NexusAlgorithmTemplate, uid string) *nexusv1.NexusAlgorithmTemplate {
-	mlaCopy := mla.DeepCopy()
-	mlaCopy.UID = types.UID(uid)
-	mlaCopy.Labels = expectedLabels()
+func expectedShardTemplate(template *nexusv1.NexusAlgorithmTemplate, uid string) *nexusv1.NexusAlgorithmTemplate {
+	templateCopy := template.DeepCopy()
+	templateCopy.UID = types.UID(uid)
+	templateCopy.Labels = expectedLabels()
 
-	return mlaCopy
+	return templateCopy
 }
 
-func expectedShardSecret(secret *corev1.Secret, mlas []*nexusv1.NexusAlgorithmTemplate) *corev1.Secret {
+func expectedShardSecret(secret *corev1.Secret, templates []*nexusv1.NexusAlgorithmTemplate) *corev1.Secret {
 	secretCopy := secret.DeepCopy()
 	secretCopy.Labels = expectedLabels()
 	secretCopy.OwnerReferences = make([]metav1.OwnerReference, 0)
-	for _, mla := range mlas {
+	for _, template := range templates {
 		secretCopy.OwnerReferences = append(secretCopy.OwnerReferences, metav1.OwnerReference{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
-			Name:       mla.Name,
-			UID:        mla.UID,
+			Name:       template.Name,
+			UID:        template.UID,
 		})
 	}
 
 	return secretCopy
 }
 
-func expectedShardConfigMap(configMap *corev1.ConfigMap, mlas []*nexusv1.NexusAlgorithmTemplate) *corev1.ConfigMap {
+func expectedShardConfigMap(configMap *corev1.ConfigMap, templates []*nexusv1.NexusAlgorithmTemplate) *corev1.ConfigMap {
 	configMapCopy := configMap.DeepCopy()
 	configMapCopy.Labels = expectedLabels()
 	configMapCopy.OwnerReferences = make([]metav1.OwnerReference, 0)
-	for _, mla := range mlas {
+	for _, template := range templates {
 		configMapCopy.OwnerReferences = append(configMapCopy.OwnerReferences, metav1.OwnerReference{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
-			Name:       mla.Name,
-			UID:        mla.UID,
+			Name:       template.Name,
+			UID:        template.UID,
 		})
 	}
 
 	return configMapCopy
 }
 
-func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onShard bool, status *nexusv1.NexusAlgorithmStatus) *nexusv1.NexusAlgorithmTemplate {
+func newTemplate(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onShard bool, status *nexusv1.NexusAlgorithmStatus) *nexusv1.NexusAlgorithmTemplate {
 	envFrom := make([]corev1.EnvFromSource, 2)
 	cargs := make([]string, 1)
 	var labels map[string]string
@@ -225,7 +223,7 @@ func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onS
 		}
 	}
 
-	mla := &nexusv1.NexusAlgorithmTemplate{
+	template := &nexusv1.NexusAlgorithmTemplate{
 		TypeMeta: metav1.TypeMeta{APIVersion: nexusv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -270,10 +268,10 @@ func newMla(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onS
 	}
 
 	if status != nil {
-		mla.Status = *status
+		template.Status = *status
 	}
 
-	return mla
+	return template
 }
 
 func newSecret(name string, owner *nexusv1.NexusAlgorithmTemplate) *corev1.Secret {
@@ -462,11 +460,11 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 	c.configMapsSynced = alwaysReady
 	c.recorder = &record.FakeRecorder{}
 
-	for _, d := range f.mlaLister {
+	for _, d := range f.templateLister {
 		_ = controllerNexusInf.Science().V1().NexusAlgorithmTemplates().Informer().GetIndexer().Add(d)
 	}
 
-	for _, d := range f.shardMlaLister {
+	for _, d := range f.shardTemplateLister {
 		_ = shardNexusInf.Science().V1().NexusAlgorithmTemplates().Informer().GetIndexer().Add(d)
 	}
 
@@ -512,7 +510,7 @@ func (f *fixture) checkActions(expected []core.Action, actual []core.Action) {
 	}
 }
 
-func (f *fixture) runController(ctx context.Context, mlaRefs []cache.ObjectName, startInformers bool, expectError bool) {
+func (f *fixture) runController(ctx context.Context, templateRefs []cache.ObjectName, startInformers bool, expectError bool) {
 	controllerRef, controllerInformers, shardInformers := f.newController(ctx)
 	if startInformers {
 		controllerInformers.nexusInformers.Start(ctx.Done())
@@ -522,12 +520,12 @@ func (f *fixture) runController(ctx context.Context, mlaRefs []cache.ObjectName,
 		shardInformers.k8sInformers.Start(ctx.Done())
 	}
 
-	for _, mlaRef := range mlaRefs {
-		err := controllerRef.syncHandler(ctx, mlaRef)
+	for _, templateRef := range templateRefs {
+		err := controllerRef.syncHandler(ctx, templateRef)
 		if !expectError && err != nil {
-			f.t.Errorf("error syncing mla: %v", err)
+			f.t.Errorf("error syncing template: %v", err)
 		} else if expectError && err == nil {
-			f.t.Error("expected error syncing mla, got nil")
+			f.t.Error("expected error syncing template, got nil")
 		}
 	}
 
@@ -555,132 +553,132 @@ func (f *fixture) runObjectHandler(ctx context.Context, objs []interface{}, star
 	f.checkActions(f.shardKubeActions, f.shardKubeClient.Actions())
 }
 
-func (f *fixture) run(ctx context.Context, mlaRefs []cache.ObjectName, expectError bool) {
-	f.runController(ctx, mlaRefs, true, expectError)
+func (f *fixture) run(ctx context.Context, templateRefs []cache.ObjectName, expectError bool) {
+	f.runController(ctx, templateRefs, true, expectError)
 }
 
-func getRef(mla *nexusv1.NexusAlgorithmTemplate) cache.ObjectName {
-	ref := cache.MetaObjectToName(mla)
+func getRef(template *nexusv1.NexusAlgorithmTemplate) cache.ObjectName {
+	ref := cache.MetaObjectToName(template)
 	return ref
 }
 
-// expectControllerUpdateMlaStatusAction sets expectations for the resource actions in a controller cluster
-// for MLA in the controller cluster we only expect a status update
-func (f *fixture) expectControllerUpdateMlaStatusAction(mla *nexusv1.NexusAlgorithmTemplate) {
-	updateMlaStatusAction := core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, "status", mla.Namespace, mla)
-	f.controllerNexusActions = append(f.controllerNexusActions, updateMlaStatusAction)
+// expectControllerUpdateTemplateStatusAction sets expectations for the resource actions in a controller cluster
+// for a template in the controller cluster we only expect a status update
+func (f *fixture) expectControllerUpdateTemplateStatusAction(template *nexusv1.NexusAlgorithmTemplate) {
+	updateTemplateStatusAction := core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, "status", template.Namespace, template)
+	f.controllerNexusActions = append(f.controllerNexusActions, updateTemplateStatusAction)
 }
 
 // expectShardActions sets expectations for the resource actions in a shard cluster
-// for resources in the shard cluster we expect the following: MLA is created, all referenced secrets and configmaps are created, with owner references assigned
-func (f *fixture) expectShardActions(shardMla *nexusv1.NexusAlgorithmTemplate, mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, mlaUpdated bool) {
-	if !mlaUpdated {
-		f.shardNexusActions = append(f.shardNexusActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, shardMla.Namespace, shardMla))
+// for resources in the shard cluster we expect the following: Template is created, all referenced secrets and configmaps are created, with owner references assigned
+func (f *fixture) expectShardActions(shardTemplate *nexusv1.NexusAlgorithmTemplate, templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap, templateUpdated bool) {
+	if !templateUpdated {
+		f.shardNexusActions = append(f.shardNexusActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, shardTemplate.Namespace, shardTemplate))
 	} else {
-		f.shardNexusActions = append(f.shardNexusActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, shardMla.Namespace, shardMla))
+		f.shardNexusActions = append(f.shardNexusActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, shardTemplate.Namespace, shardTemplate))
 	}
 
-	if mlaSecret != nil {
-		f.shardKubeActions = append(f.shardKubeActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, mlaSecret.Namespace, mlaSecret))
+	if templateSecret != nil {
+		f.shardKubeActions = append(f.shardKubeActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, templateSecret.Namespace, templateSecret))
 	}
 
-	if mlaConfigMap != nil {
-		f.shardKubeActions = append(f.shardKubeActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, mlaConfigMap.Namespace, mlaConfigMap))
+	if templateConfigMap != nil {
+		f.shardKubeActions = append(f.shardKubeActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, templateConfigMap.Namespace, templateConfigMap))
 	}
 }
 
-func (f *fixture) expectOwnershipUpdateActions(mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap) {
-	if mlaSecret != nil {
-		f.shardKubeActions = append(f.shardKubeActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, mlaSecret.Namespace, mlaSecret))
+func (f *fixture) expectOwnershipUpdateActions(templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap) {
+	if templateSecret != nil {
+		f.shardKubeActions = append(f.shardKubeActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, templateSecret.Namespace, templateSecret))
 	}
 
-	if mlaConfigMap != nil {
-		f.shardKubeActions = append(f.shardKubeActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, mlaConfigMap.Namespace, mlaConfigMap))
+	if templateConfigMap != nil {
+		f.shardKubeActions = append(f.shardKubeActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, templateConfigMap.Namespace, templateConfigMap))
 	}
 }
 
 // expectedUpdateActions sets expectations for the resource actions in a shard cluster when a referenced secret or configmap in the controller cluster is updated
-func (f *fixture) expectedUpdateActions(controllerMla *nexusv1.NexusAlgorithmTemplate, shardMla *nexusv1.NexusAlgorithmTemplate, mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, controllerStatusUpdated bool) {
-	updatedSecretAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, shardMla.Namespace, mlaSecret)
-	updatedConfigAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, shardMla.Namespace, mlaConfigMap)
+func (f *fixture) expectedUpdateActions(controllerTemplate *nexusv1.NexusAlgorithmTemplate, shardTemplate *nexusv1.NexusAlgorithmTemplate, templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap, controllerStatusUpdated bool) {
+	updatedSecretAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, shardTemplate.Namespace, templateSecret)
+	updatedConfigAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, shardTemplate.Namespace, templateConfigMap)
 	if controllerStatusUpdated {
-		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, "status", controllerMla.Namespace, controllerMla))
+		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, "status", controllerTemplate.Namespace, controllerTemplate))
 	}
 	f.shardKubeActions = append(f.shardKubeActions, updatedSecretAction, updatedConfigAction)
 }
 
 // expectedUpdateActions sets expectations for the resource actions in a shard cluster when a referenced secret or configmap in the controller cluster is updated
-func (f *fixture) expectedControllerUpdateActions(controllerMla *nexusv1.NexusAlgorithmTemplate, mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, controllerStatusUpdated bool) {
-	updatedSecretAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, controllerMla.Namespace, mlaSecret)
-	updatedConfigAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, controllerMla.Namespace, mlaConfigMap)
+func (f *fixture) expectedControllerUpdateActions(controllerTemplate *nexusv1.NexusAlgorithmTemplate, templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap, controllerStatusUpdated bool) {
+	updatedSecretAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, controllerTemplate.Namespace, templateSecret)
+	updatedConfigAction := core.NewUpdateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, controllerTemplate.Namespace, templateConfigMap)
 	if controllerStatusUpdated {
-		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, "status", controllerMla.Namespace, controllerMla))
+		f.controllerNexusActions = append(f.controllerNexusActions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, "status", controllerTemplate.Namespace, controllerTemplate))
 	}
 	f.controllerKubeActions = append(f.controllerKubeActions, updatedSecretAction, updatedConfigAction)
 }
 
 // expectedDeleteActions sets expectations for resource deletions
-func (f *fixture) expectedDeleteActions(shardMla *nexusv1.NexusAlgorithmTemplate) {
-	f.shardNexusActions = append(f.shardNexusActions, core.NewDeleteAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, shardMla.Namespace, shardMla.Name))
+func (f *fixture) expectedDeleteActions(shardTemplate *nexusv1.NexusAlgorithmTemplate) {
+	f.shardNexusActions = append(f.shardNexusActions, core.NewDeleteAction(schema.GroupVersionResource{Resource: "NexusAlgorithmTemplates"}, shardTemplate.Namespace, shardTemplate.Name))
 }
 
 func provisionControllerResources() (*corev1.Secret, *corev1.ConfigMap, *nexusv1.NexusAlgorithmTemplate) {
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mla := newMla("test", mlaSecret, mlaConfigMap, false, nil)
-	return mlaSecret, mlaConfigMap, mla
+	templateSecret := newSecret("test-secret", nil)
+	templateConfigMap := newConfigMap("test-config", nil)
+	template := newTemplate("test", templateSecret, templateConfigMap, false, nil)
+	return templateSecret, templateConfigMap, template
 }
 
-func provisionOwnedControllerResources(mlaSecret *corev1.Secret, mlaConfigMap *corev1.ConfigMap, mla *nexusv1.NexusAlgorithmTemplate) (*corev1.Secret, *corev1.ConfigMap) {
-	ownedMlaSecret := mlaSecret.DeepCopy()
-	ownedMlaSecret.OwnerReferences = []metav1.OwnerReference{
+func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap, template *nexusv1.NexusAlgorithmTemplate) (*corev1.Secret, *corev1.ConfigMap) {
+	ownedtemplateSecret := templateSecret.DeepCopy()
+	ownedtemplateSecret.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
-			Name:       mla.Name,
-			UID:        mla.UID,
+			Name:       template.Name,
+			UID:        template.UID,
 		},
 	}
-	ownedMlaConfigMap := mlaConfigMap.DeepCopy()
-	ownedMlaConfigMap.OwnerReferences = []metav1.OwnerReference{
+	ownedtemplateConfigMap := templateConfigMap.DeepCopy()
+	ownedtemplateConfigMap.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
-			Name:       mla.Name,
-			UID:        mla.UID,
+			Name:       template.Name,
+			UID:        template.UID,
 		},
 	}
 
-	return ownedMlaSecret, ownedMlaConfigMap
+	return ownedtemplateSecret, ownedtemplateConfigMap
 }
 
-// TestCreatesMla test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
-func TestCreatesMla(t *testing.T) {
+// TestCreatesTemplate test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
+func TestCreatesTemplate(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
-	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+	templateSecret, templateConfigMap, template := provisionControllerResources()
+	ownedtemplateSecret, ownedtemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mla},
-			secretListResults:    []*corev1.Secret{mlaSecret},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
-			existingMlaObjects:   []runtime.Object{mla},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:       []*corev1.Secret{templateSecret},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
+			existingTemplateObjects: []runtime.Object{template},
 		},
 		&NexusFixture{},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template, nil, nil, nil, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionFalse,
 			"Algorithm \"test\" initializing",
 		),
 	}))
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionTrue,
@@ -688,40 +686,40 @@ func TestCreatesMla(t *testing.T) {
 		),
 	}))
 
-	f.expectedControllerUpdateActions(mla, ownedMlaSecret, ownedMlaConfigMap, false)
+	f.expectedControllerUpdateActions(template, ownedtemplateSecret, ownedtemplateConfigMap, false)
 
 	f.expectShardActions(
-		expectedShardMla(mla, ""),
-		expectedShardSecret(mlaSecret, []*nexusv1.NexusAlgorithmTemplate{expectedShardMla(mla, "")}),
-		expectedShardConfigMap(mlaConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardMla(mla, "")}),
+		expectedShardTemplate(template, ""),
+		expectedShardSecret(templateSecret, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template, "")}),
+		expectedShardConfigMap(templateConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template, "")}),
 		false)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
 	t.Log("Controller successfully created a new NexusAlgorithmTemplate and related secrets and configurations on the shard cluster")
 }
 
 // TestDetectsRogue tests the rogue secrets or configs are detected and reported as errors correctly
 func TestDetectsRogue(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
-	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+	templateSecret, templateConfigMap, template := provisionControllerResources()
+	ownedtemplateSecret, ownedtemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mla},
-			secretListResults:    []*corev1.Secret{mlaSecret},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
-			existingMlaObjects:   []runtime.Object{mla},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:       []*corev1.Secret{templateSecret},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
+			existingTemplateObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			secretListResults: []*corev1.Secret{mlaSecret},
+			secretListResults: []*corev1.Secret{templateSecret},
 		},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template, nil, nil, nil, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionFalse,
@@ -730,59 +728,59 @@ func TestDetectsRogue(t *testing.T) {
 	}))
 	// no actions expected due to fail-fast approach in sync
 	f.expectShardActions(
-		expectedShardMla(mla, ""),
+		expectedShardTemplate(template, ""),
 		nil,
 		nil,
 		false)
 
-	f.expectedControllerUpdateActions(mla, ownedMlaSecret, ownedMlaConfigMap, false)
+	f.expectedControllerUpdateActions(template, ownedtemplateSecret, ownedtemplateConfigMap, false)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, true)
 	t.Log("Controller successfully detected a rogue resource on the shard cluster")
 }
 
-// TestHandlesNotExistingResource tests that missing Mla case is handled by the controller
+// TestHandlesNotExistingResource tests that missing template case is handled by the controller
 func TestHandlesNotExistingResource(t *testing.T) {
 	f := newFixture(t)
-	_, _, mla := provisionControllerResources()
+	_, _, template := provisionControllerResources()
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults: []*nexusv1.NexusAlgorithmTemplate{},
+			templateListResults: []*nexusv1.NexusAlgorithmTemplate{},
 
-			secretListResults:    []*corev1.Secret{},
-			configMapListResults: []*corev1.ConfigMap{},
-			existingCoreObjects:  []runtime.Object{},
-			existingMlaObjects:   []runtime.Object{},
+			secretListResults:       []*corev1.Secret{},
+			configMapListResults:    []*corev1.ConfigMap{},
+			existingCoreObjects:     []runtime.Object{},
+			existingTemplateObjects: []runtime.Object{},
 		},
 		&NexusFixture{},
 	)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
-	t.Log("Controller successfully reported an error for the missing Mla resource")
+	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
+	t.Log("Controller successfully reported an error for the missing Template resource")
 }
 
-// TestSkipsInvalidMla tests that resource creation is skipped with a status update in case referenced configurations do not exist
-func TestSkipsInvalidMla(t *testing.T) {
+// TestSkipsInvalidTemplate tests that resource creation is skipped with a status update in case referenced configurations do not exist
+func TestSkipsInvalidTemplate(t *testing.T) {
 	f := newFixture(t)
-	_, _, mla := provisionControllerResources()
+	_, _, template := provisionControllerResources()
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults: []*nexusv1.NexusAlgorithmTemplate{mla},
+			templateListResults: []*nexusv1.NexusAlgorithmTemplate{template},
 
-			secretListResults:    []*corev1.Secret{},
-			configMapListResults: []*corev1.ConfigMap{},
-			existingCoreObjects:  []runtime.Object{},
-			existingMlaObjects:   []runtime.Object{mla},
+			secretListResults:       []*corev1.Secret{},
+			configMapListResults:    []*corev1.ConfigMap{},
+			existingCoreObjects:     []runtime.Object{},
+			existingTemplateObjects: []runtime.Object{template},
 		},
 		&NexusFixture{},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template, nil, nil, nil, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionFalse,
@@ -790,27 +788,27 @@ func TestSkipsInvalidMla(t *testing.T) {
 		),
 	}))
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)}, true)
-	t.Log("Controller skipped a misconfigured Mla resource")
+	f.run(ctx, []cache.ObjectName{getRef(template)}, true)
+	t.Log("Controller skipped a misconfigured Template resource")
 }
 
-// TestUpdatesMlaSecretAndConfig test that update to a secret referenced by the MLA is propagated to shard clusters
-func TestUpdatesMlaSecretAndConfig(t *testing.T) {
+// TestUpdatesTemplateSecretAndConfig test that update to a secret referenced by the Template is propagated to shard clusters
+func TestUpdatesTemplateSecretAndConfig(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
-	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+	templateSecret, templateConfigMap, template := provisionControllerResources()
+	ownedtemplateSecret, ownedtemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
 
-	mlaSecretUpdated := ownedMlaSecret.DeepCopy()
-	mlaSecretUpdated.Data = map[string][]byte{
+	templateSecretUpdated := ownedtemplateSecret.DeepCopy()
+	templateSecretUpdated.Data = map[string][]byte{
 		"secret.file": []byte("updated-secret"),
 	}
 
-	mlaConfigMapUpdated := ownedMlaConfigMap.DeepCopy()
-	mlaConfigMapUpdated.Data = map[string]string{
+	templateConfigMapUpdated := ownedtemplateConfigMap.DeepCopy()
+	templateConfigMapUpdated.Data = map[string]string{
 		"new.file": "updated-config",
 	}
 
-	mla = newMla("test", mlaSecretUpdated, mlaConfigMapUpdated, false, &nexusv1.NexusAlgorithmStatus{
+	template = newTemplate("test", templateSecretUpdated, templateConfigMapUpdated, false, &nexusv1.NexusAlgorithmStatus{
 		SyncedSecrets:        []string{"test-secret"},
 		SyncedConfigurations: []string{"test-config"},
 		SyncedToClusters:     []string{"shard0"},
@@ -823,16 +821,16 @@ func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 		},
 	})
 
-	mlaOnShard := newMla("test", mlaSecret, mlaConfigMap, true, nil)
-	mlaSecretOnShard := newSecret("test-secret", mlaOnShard)
-	mlaSecretOnShardUpdated := mlaSecretOnShard.DeepCopy()
-	mlaSecretOnShardUpdated.Data = map[string][]byte{
+	templateOnShard := newTemplate("test", templateSecret, templateConfigMap, true, nil)
+	templateSecretOnShard := newSecret("test-secret", templateOnShard)
+	templateSecretOnShardUpdated := templateSecretOnShard.DeepCopy()
+	templateSecretOnShardUpdated.Data = map[string][]byte{
 		"secret.file": []byte("updated-secret"),
 	}
 
-	mlaConfigMapOnShard := newConfigMap("test-config", mlaOnShard)
-	mlaConfigMapOnShardUpdated := mlaConfigMapOnShard.DeepCopy()
-	mlaConfigMapOnShardUpdated.Data = map[string]string{
+	templateConfigMapOnShard := newConfigMap("test-config", templateOnShard)
+	templateConfigMapOnShardUpdated := templateConfigMapOnShard.DeepCopy()
+	templateConfigMapOnShardUpdated.Data = map[string]string{
 		"new.file": "updated-config",
 	}
 
@@ -841,36 +839,36 @@ func TestUpdatesMlaSecretAndConfig(t *testing.T) {
 	f = f.configure(
 		// controller lister returns a new secret and a new configmap
 		&ControllerFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mla},
-			secretListResults:    []*corev1.Secret{mlaSecretUpdated},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMapUpdated},
-			existingCoreObjects:  []runtime.Object{mlaSecretUpdated, mlaConfigMapUpdated},
-			existingMlaObjects:   []runtime.Object{mla},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:       []*corev1.Secret{templateSecretUpdated},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMapUpdated},
+			existingCoreObjects:     []runtime.Object{templateSecretUpdated, templateConfigMapUpdated},
+			existingTemplateObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mlaOnShard},
-			secretListResults:    []*corev1.Secret{mlaSecretOnShard},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMapOnShard},
-			existingCoreObjects:  []runtime.Object{mlaSecretOnShard, mlaConfigMapOnShard},
-			existingMlaObjects:   []runtime.Object{mlaOnShard},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{templateOnShard},
+			secretListResults:       []*corev1.Secret{templateSecretOnShard},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMapOnShard},
+			existingCoreObjects:     []runtime.Object{templateSecretOnShard, templateConfigMapOnShard},
+			existingTemplateObjects: []runtime.Object{templateOnShard},
 		},
 	)
 
 	// secret or cfg updates are not show in resource conditions rn
 	f.expectedUpdateActions(
-		expectedMla(mla, mlaSecretUpdated, mlaConfigMapUpdated, []string{"shard0"}, nil),
-		mlaOnShard, mlaSecretOnShardUpdated, mlaConfigMapOnShardUpdated, false)
+		expectedTemplate(template, templateSecretUpdated, templateConfigMapUpdated, []string{"shard0"}, nil),
+		templateOnShard, templateSecretOnShardUpdated, templateConfigMapOnShardUpdated, false)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
 	t.Log("Controller successfully updated a Secret and a ConfigMap in the shard cluster after those were updated in the controller cluster")
 }
 
-// TestCreatesSharedResources tests that the controller can successfully create an MLA that owns the secret and configmap created by another MLA
+// TestCreatesSharedResources tests that the controller can successfully create a Template that owns the secret and configmap created by another Template
 func TestCreatesSharedResources(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
-	mla1 := newMla("test1", mlaSecret, mlaConfigMap, false, &nexusv1.NexusAlgorithmStatus{
+	templateSecret := newSecret("test-secret", nil)
+	templateConfigMap := newConfigMap("test-config", nil)
+	template1 := newTemplate("test1", templateSecret, templateConfigMap, false, &nexusv1.NexusAlgorithmStatus{
 		SyncedSecrets:        []string{"test-secret"},
 		SyncedConfigurations: []string{"test-config"},
 		SyncedToClusters:     []string{"shard0"},
@@ -878,130 +876,130 @@ func TestCreatesSharedResources(t *testing.T) {
 			*nexusv1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
 		},
 	})
-	ownedMla1Secret, ownedMla1ConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla1)
+	ownedTemplate1Secret, ownedTemplate1ConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template1)
 
-	mla2 := newMla("test2", mlaSecret, mlaConfigMap, false, nil)
-	ownedMla12Secret := ownedMla1Secret.DeepCopy()
-	ownedMla12Secret.OwnerReferences = append(ownedMla12Secret.OwnerReferences, metav1.OwnerReference{
+	template2 := newTemplate("test2", templateSecret, templateConfigMap, false, nil)
+	ownedTemplate12Secret := ownedTemplate1Secret.DeepCopy()
+	ownedTemplate12Secret.OwnerReferences = append(ownedTemplate12Secret.OwnerReferences, metav1.OwnerReference{
 		APIVersion: nexusv1.SchemeGroupVersion.String(),
 		Kind:       "NexusAlgorithmTemplate",
-		Name:       mla2.Name,
-		UID:        mla2.UID,
+		Name:       template2.Name,
+		UID:        template2.UID,
 	})
-	ownedMla12ConfigMap := ownedMla1ConfigMap.DeepCopy()
-	ownedMla12ConfigMap.OwnerReferences = append(ownedMla12ConfigMap.OwnerReferences, metav1.OwnerReference{
+	ownedTemplate12ConfigMap := ownedTemplate1ConfigMap.DeepCopy()
+	ownedTemplate12ConfigMap.OwnerReferences = append(ownedTemplate12ConfigMap.OwnerReferences, metav1.OwnerReference{
 		APIVersion: nexusv1.SchemeGroupVersion.String(),
 		Kind:       "NexusAlgorithmTemplate",
-		Name:       mla2.Name,
-		UID:        mla2.UID,
+		Name:       template2.Name,
+		UID:        template2.UID,
 	})
 
-	mlaSecretOnShard1 := expectedShardSecret(mlaSecret, []*nexusv1.NexusAlgorithmTemplate{expectedShardMla(mla1, mla1.GetName())})
-	mlaConfigOnShard1 := expectedShardConfigMap(mlaConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardMla(mla1, mla1.GetName())})
-	mlaOnShard1 := expectedShardMla(mla1, mla1.GetName())
+	templateSecretOnShard1 := expectedShardSecret(templateSecret, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template1, template1.GetName())})
+	templateConfigOnShard1 := expectedShardConfigMap(templateConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template1, template1.GetName())})
+	templateOnShard1 := expectedShardTemplate(template1, template1.GetName())
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults: []*nexusv1.NexusAlgorithmTemplate{expectedMla(mla1, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+			templateListResults: []*nexusv1.NexusAlgorithmTemplate{expectedTemplate(template1, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
 				*nexusv1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
-			}), mla2},
-			secretListResults:    []*corev1.Secret{ownedMla1Secret},
-			configMapListResults: []*corev1.ConfigMap{ownedMla1ConfigMap},
-			existingCoreObjects:  []runtime.Object{ownedMla1Secret, ownedMla1ConfigMap},
-			existingMlaObjects: []runtime.Object{expectedMla(mla1, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+			}), template2},
+			secretListResults:    []*corev1.Secret{ownedTemplate1Secret},
+			configMapListResults: []*corev1.ConfigMap{ownedTemplate1ConfigMap},
+			existingCoreObjects:  []runtime.Object{ownedTemplate1Secret, ownedTemplate1ConfigMap},
+			existingTemplateObjects: []runtime.Object{expectedTemplate(template1, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
 				*nexusv1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
-			}), mla2},
+			}), template2},
 		},
-		// shard cluster now has an MLA, a secret and a configmap
+		// shard cluster now has a Template, a secret and a configmap
 		&NexusFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mlaOnShard1},
-			secretListResults:    []*corev1.Secret{mlaSecretOnShard1},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigOnShard1},
-			existingCoreObjects:  []runtime.Object{mlaSecretOnShard1, mlaConfigOnShard1},
-			existingMlaObjects:   []runtime.Object{mlaOnShard1},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{templateOnShard1},
+			secretListResults:       []*corev1.Secret{templateSecretOnShard1},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigOnShard1},
+			existingCoreObjects:     []runtime.Object{templateSecretOnShard1, templateConfigOnShard1},
+			existingTemplateObjects: []runtime.Object{templateOnShard1},
 		},
 	)
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, nil, nil, nil, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template2, nil, nil, nil, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionFalse,
 			"Algorithm \"test2\" initializing",
 		)}))
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla2, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template2, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionTrue,
 			"Algorithm \"test2\" ready",
 		),
 	}))
-	f.expectedControllerUpdateActions(mla2, ownedMla12Secret, ownedMla12ConfigMap, false)
-	f.expectShardActions(expectedShardMla(mla2, ""), nil, nil, false)
+	f.expectedControllerUpdateActions(template2, ownedTemplate12Secret, ownedTemplate12ConfigMap, false)
+	f.expectShardActions(expectedShardTemplate(template2, ""), nil, nil, false)
 	f.expectOwnershipUpdateActions(
-		expectedShardSecret(mlaSecretOnShard1, []*nexusv1.NexusAlgorithmTemplate{mlaOnShard1, expectedShardMla(mla2, "")}),
-		expectedShardConfigMap(mlaConfigOnShard1, []*nexusv1.NexusAlgorithmTemplate{mlaOnShard1, expectedShardMla(mla2, "")}))
+		expectedShardSecret(templateSecretOnShard1, []*nexusv1.NexusAlgorithmTemplate{templateOnShard1, expectedShardTemplate(template2, "")}),
+		expectedShardConfigMap(templateConfigOnShard1, []*nexusv1.NexusAlgorithmTemplate{templateOnShard1, expectedShardTemplate(template2, "")}))
 
-	f.run(ctx, []cache.ObjectName{getRef(mla2)}, false)
-	t.Log("Controller successfully created a second Mla resource referencing the same Secret and ConfigMap in the controller cluster")
+	f.run(ctx, []cache.ObjectName{getRef(template2)}, false)
+	t.Log("Controller successfully created a second Template resource referencing the same Secret and ConfigMap in the controller cluster")
 }
 
-// TestTakesOwnership test verifies that controller doesn't fail if it finds an existing MLA not created by it, and simply takes ownership
+// TestTakesOwnership test verifies that controller doesn't fail if it finds an existing Template not created by it, and simply takes ownership
 func TestTakesOwnership(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret, mlaConfigMap, mla := provisionControllerResources()
-	ownedMlaSecret, ownedMlaConfigMap := provisionOwnedControllerResources(mlaSecret, mlaConfigMap, mla)
+	templateSecret, templateConfigMap, template := provisionControllerResources()
+	ownedtemplateSecret, ownedtemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
 
-	rogueMla := expectedShardMla(mla, "")
-	rogueMla.Spec.DatadogIntegrationSettings.MountDatadogSocket = ptr.Bool(false)
+	rogueTemplate := expectedShardTemplate(template, "")
+	rogueTemplate.Spec.DatadogIntegrationSettings.MountDatadogSocket = ptr.Bool(false)
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mla},
-			secretListResults:    []*corev1.Secret{mlaSecret},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
-			existingMlaObjects:   []runtime.Object{mla},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:       []*corev1.Secret{templateSecret},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
+			existingTemplateObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			mlaListResults:     []*nexusv1.NexusAlgorithmTemplate{rogueMla},
-			existingMlaObjects: []runtime.Object{rogueMla},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{rogueTemplate},
+			existingTemplateObjects: []runtime.Object{rogueTemplate},
 		},
 	)
 
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, nil, nil, nil, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template, nil, nil, nil, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionFalse,
 			"Algorithm \"test\" initializing",
 		)}))
-	f.expectControllerUpdateMlaStatusAction(expectedMla(mla, mlaSecret, mlaConfigMap, []string{"shard0"}, []metav1.Condition{
+	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
 		*nexusv1.NewResourceReadyCondition(
 			metav1.Now(),
 			metav1.ConditionTrue,
 			"Algorithm \"test\" ready",
 		),
 	}))
-	f.expectedControllerUpdateActions(mla, ownedMlaSecret, ownedMlaConfigMap, false)
+	f.expectedControllerUpdateActions(template, ownedtemplateSecret, ownedtemplateConfigMap, false)
 	f.expectShardActions(
-		expectedShardMla(mla, ""),
-		expectedShardSecret(mlaSecret, []*nexusv1.NexusAlgorithmTemplate{expectedShardMla(mla, "")}),
-		expectedShardConfigMap(mlaConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardMla(mla, "")}),
+		expectedShardTemplate(template, ""),
+		expectedShardSecret(templateSecret, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template, "")}),
+		expectedShardConfigMap(templateConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template, "")}),
 		true)
 
-	f.run(ctx, []cache.ObjectName{getRef(mla)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
 	t.Log("Controller successfully took ownership of a NexusAlgorithmTemplate and related secrets and configurations on the shard cluster")
 }
 
-// TestDeletesMla tests that MLA removal from controller cluster will propagate to shard clusters
-func TestDeletesMla(t *testing.T) {
+// TestDeletesTemplate tests that Template removal from controller cluster will propagate to shard clusters
+func TestDeletesTemplate(t *testing.T) {
 	f := newFixture(t)
-	mlaSecret := newSecret("test-secret", nil)
-	mlaConfigMap := newConfigMap("test-config", nil)
+	templateSecret := newSecret("test-secret", nil)
+	templateConfigMap := newConfigMap("test-config", nil)
 
-	mla := newMla("test", mlaSecret, mlaConfigMap, false, &nexusv1.NexusAlgorithmStatus{
+	template := newTemplate("test", templateSecret, templateConfigMap, false, &nexusv1.NexusAlgorithmStatus{
 		SyncedSecrets:        []string{"test-secret"},
 		SyncedConfigurations: []string{"test-config"},
 		SyncedToClusters:     []string{"shard0"},
@@ -1014,33 +1012,33 @@ func TestDeletesMla(t *testing.T) {
 		},
 	})
 
-	mlaOnShard := newMla("test", mlaSecret, mlaConfigMap, true, nil)
-	mlaSecretOnShard := newSecret("test-secret", mlaOnShard)
-	mlaConfigMapOnShard := newConfigMap("test-config", mlaOnShard)
+	templateOnShard := newTemplate("test", templateSecret, templateConfigMap, true, nil)
+	templateSecretOnShard := newSecret("test-secret", templateOnShard)
+	templateConfigMapOnShard := newConfigMap("test-config", templateOnShard)
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		// controller lister returns a new secret and a new configmap
 		&ControllerFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mla},
-			secretListResults:    []*corev1.Secret{mlaSecret},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMap},
-			existingCoreObjects:  []runtime.Object{mlaSecret, mlaConfigMap},
-			existingMlaObjects:   []runtime.Object{mla},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:       []*corev1.Secret{templateSecret},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
+			existingTemplateObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			mlaListResults:       []*nexusv1.NexusAlgorithmTemplate{mlaOnShard},
-			secretListResults:    []*corev1.Secret{mlaSecretOnShard},
-			configMapListResults: []*corev1.ConfigMap{mlaConfigMapOnShard},
-			existingCoreObjects:  []runtime.Object{mlaSecretOnShard, mlaConfigMapOnShard},
-			existingMlaObjects:   []runtime.Object{mlaOnShard},
+			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{templateOnShard},
+			secretListResults:       []*corev1.Secret{templateSecretOnShard},
+			configMapListResults:    []*corev1.ConfigMap{templateConfigMapOnShard},
+			existingCoreObjects:     []runtime.Object{templateSecretOnShard, templateConfigMapOnShard},
+			existingTemplateObjects: []runtime.Object{templateOnShard},
 		},
 	)
 
-	// deletion of MLA must be triggered on the shard
-	f.expectedDeleteActions(mlaOnShard)
+	// deletion of a Template must be triggered on the shard
+	f.expectedDeleteActions(templateOnShard)
 
-	f.runObjectHandler(ctx, []interface{}{mla}, true)
-	t.Log("Controller successfully deleted MLA for the shard after it was deleted from the controller cluster")
+	f.runObjectHandler(ctx, []interface{}{template}, true)
+	t.Log("Controller successfully deleted a Template for the shard after it was deleted from the controller cluster")
 }

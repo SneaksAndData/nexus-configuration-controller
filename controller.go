@@ -59,32 +59,32 @@ const (
 const controllerAgentName = "nexus-configuration-controller"
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a MachineLearningAlgorithm is synced
+	// SuccessSynced is used as part of the Event 'reason' when a NexusAlgorithmTemplate is synced
 	SuccessSynced = "Synced"
-	// ErrResourceExists is used as part of the Event 'reason' when a MachineLearningAlgorithm fails
-	// to sync due to one of: MLA CR, Secret owned by MLA CR, ConfigMap owned by MLA CR of the same name already existing.
+	// ErrResourceExists is used as part of the Event 'reason' when a NexusAlgorithmTemplate fails
+	// to sync due to one of: Template CR, Secret owned by Template CR, ConfigMap owned by Template CR of the same name already existing.
 	ErrResourceExists = "ErrResourceExists"
-	// ErrResourceMissing is used as part of the Event 'reason' when a MachineLearningAlgorithm fails
+	// ErrResourceMissing is used as part of the Event 'reason' when a NexusAlgorithmTemplate fails
 	// to sync due to a Secret or a ConfigMap referenced by it is missing from the controller cluster
 	ErrResourceMissing = "ErrResourceMissing"
 	// ErrResourceSyncError is used when a secret/configmap fails to sync with a fatal exception
 	ErrResourceSyncError = "ErrResourceSyncError"
 
 	// MessageResourceExists is the message used for Events when a resource
-	// fails to sync due to one of: MLA CR, Secret owned by MLA CR, ConfigMap owned by MLA CR already existing
+	// fails to sync due to one of: Template CR, Secret owned by Template CR, ConfigMap owned by Template CR already existing
 	MessageResourceExists = "Resource %q already exists and is not managed by any Machine Learning Algorithm"
-	// MessageResourceSynced is the message used for an Event fired when a MachineLearningAlgorithm
+	// MessageResourceSynced is the message used for an Event fired when a NexusAlgorithmTemplate
 	// is synced successfully
 	MessageResourceSynced = "Machine Learning Algorithm synced successfully"
-	// MessageResourceMissing is the message used for an Event fired when a MachineLearningAlgorithm references a missing Secret or a ConfigMap
-	MessageResourceMissing = "Resource %q referenced by MachineLearningAlgorithm %q is missing in the controller cluster"
+	// MessageResourceMissing is the message used for an Event fired when a NexusAlgorithmTemplate references a missing Secret or a ConfigMap
+	MessageResourceMissing = "Resource %q referenced by NexusAlgorithmTemplate %q is missing in the controller cluster"
 	// MessageResourceOperationFailed is the message used for an Event fired in case of fatal exceptions occurring during Secret/Configmap sync
-	MessageResourceOperationFailed = "Synchronization/update of a resource %q referenced by MachineLearningAlgorithm %q failed with a fatal error %s"
+	MessageResourceOperationFailed = "Synchronization/update of a resource %q referenced by NexusAlgorithmTemplate %q failed with a fatal error %s"
 	// FieldManager distinguishes this controller from other things writing to API objects
 	FieldManager = controllerAgentName
 )
 
-// Controller is the controller implementation for MachineLearningAlgorithm resources
+// Controller is the controller implementation for NexusAlgorithmTemplate resources
 type Controller struct {
 	// controllerKubeClientSet is a standard kubernetes clientset, for the cluster where controller is deployed
 	controllerKubeClientSet kubernetes.Interface
@@ -101,7 +101,7 @@ type Controller struct {
 	configMapLister  corelisters.ConfigMapLister
 	configMapsSynced cache.InformerSynced
 
-	// templateLister is a MachineLearningAlgorithm lister in the cluster where controller is deployed
+	// templateLister is a NexusAlgorithmTemplate lister in the cluster where controller is deployed
 	templateLister nexuslisters.NexusAlgorithmTemplateLister
 	templateSynced cache.InformerSynced
 
@@ -116,7 +116,7 @@ type Controller struct {
 	recorder record.EventRecorder
 }
 
-// enqueueResource takes a MachineLearningAlgorithm resource and converts it into a namespace/name
+// enqueueResource takes a NexusAlgorithmTemplate resource and converts it into a namespace/name
 // string which is then put onto the work queue.
 func (c *Controller) enqueueResource(obj interface{}) {
 	switch ot := obj.(type) {
@@ -134,9 +134,9 @@ func (c *Controller) enqueueResource(obj interface{}) {
 }
 
 // handleObject will take any resource implementing metav1.Object and attempt
-// to find the MachineLearningAlgorithm resource that 'owns' it. It does this by looking at the
+// to find the NexusAlgorithmTemplate resource that 'owns' it. It does this by looking at the
 // objects metadata.ownerReferences field for an appropriate OwnerReference.
-// It then enqueues that MachineLearningAlgorithm resource to be processed. If the object does not
+// It then enqueues that NexusAlgorithmTemplate resource to be processed. If the object does not
 // have an appropriate OwnerReference, it will simply be skipped.
 func (c *Controller) handleObject(obj interface{}) {
 	var object metav1.Object
@@ -171,7 +171,7 @@ func (c *Controller) handleObject(obj interface{}) {
 		for _, shard := range c.nexusShards {
 			deleteErr := shard.DeleteMachineLearningAlgorithm(object)
 			if deleteErr != nil {
-				utilruntime.HandleErrorWithContext(context.Background(), nil, "Error deleting MLA from a connected shard", "shard", shard.Name)
+				utilruntime.HandleErrorWithContext(context.Background(), nil, "Error deleting Template from a connected shard", "shard", shard.Name)
 				return
 			}
 		}
@@ -183,13 +183,13 @@ func (c *Controller) handleObject(obj interface{}) {
 					continue
 				}
 
-				mla, err := c.templateLister.NexusAlgorithmTemplates(object.GetNamespace()).Get(ownerRef.Name)
+				template, err := c.templateLister.NexusAlgorithmTemplates(object.GetNamespace()).Get(ownerRef.Name)
 				if err != nil {
-					logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "mla", ownerRef.Name)
+					logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "template", ownerRef.Name)
 					return
 				}
 
-				c.enqueueResource(mla)
+				c.enqueueResource(template)
 			}
 		}
 	}
@@ -206,7 +206,7 @@ func NewController(
 
 	controllerSecretInformer coreinformers.SecretInformer,
 	controllerConfigmapInformer coreinformers.ConfigMapInformer,
-	controllerMlaInformer nexusinformers.NexusAlgorithmTemplateInformer,
+	controllerTemplateInformer nexusinformers.NexusAlgorithmTemplateInformer,
 
 	failureRateBaseDelay time.Duration,
 	failureRateMaxDelay time.Duration,
@@ -242,15 +242,15 @@ func NewController(
 		configMapLister:  controllerConfigmapInformer.Lister(),
 		configMapsSynced: controllerConfigmapInformer.Informer().HasSynced,
 
-		templateLister: controllerMlaInformer.Lister(),
-		templateSynced: controllerMlaInformer.Informer().HasSynced,
+		templateLister: controllerTemplateInformer.Lister(),
+		templateSynced: controllerTemplateInformer.Informer().HasSynced,
 		workQueue:      workqueue.NewTypedRateLimitingQueue(ratelimiter),
 		recorder:       recorder,
 	}
 
 	logger.Info("Setting up event handlers")
 	// Set up an event handler for when Machine Learning Algorithm resources change
-	_, handlerErr := controllerMlaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, handlerErr := controllerTemplateInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueResource,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueResource(new)
@@ -268,8 +268,8 @@ func NewController(
 
 	// Set up an event handler for when Secret resources change. This
 	// handler will lookup the owner of the given Secret, and if it is
-	// owned by a MachineLearningAlgorithm resource then the handler will enqueue that
-	// MachineLearningAlgorithm resource for processing.
+	// owned by a NexusAlgorithmTemplate resource then the handler will enqueue that
+	// NexusAlgorithmTemplate resource for processing.
 	_, handlerErr = controllerSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.handleObject,
 		UpdateFunc: func(old, new interface{}) {
@@ -291,8 +291,8 @@ func NewController(
 
 	// Set up an event handler for when ConfigMap resources change. This
 	// handler will lookup the owner of the given ConfigMap, and if it is
-	// owned by a MachineLearningAlgorithm resource then the handler will enqueue that
-	// MachineLearningAlgorithm resource for processing.
+	// owned by a NexusAlgorithmTemplate resource then the handler will enqueue that
+	// NexusAlgorithmTemplate resource for processing.
 	_, handlerErr = controllerConfigmapInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.handleObject,
 		UpdateFunc: func(old, new interface{}) {
@@ -375,7 +375,7 @@ func (c *Controller) reportTemplateInitCondition(template *v1.NexusAlgorithmTemp
 	return template, nil
 }
 
-func (c *Controller) reportMlaSyncedCondition(template *v1.NexusAlgorithmTemplate, updatedSecrets []string, updatedConfigMaps []string, shards []string) (*v1.NexusAlgorithmTemplate, error) {
+func (c *Controller) reportTemplateSyncedCondition(template *v1.NexusAlgorithmTemplate, updatedSecrets []string, updatedConfigMaps []string, shards []string) (*v1.NexusAlgorithmTemplate, error) {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	templateCopy := template.DeepCopy()
 	// update conditions if changed
@@ -400,7 +400,7 @@ func (c *Controller) isMissingOwnership(obj metav1.Object, owner metav1.Object) 
 	// if already controlled, no error
 	if objRefs := obj.GetOwnerReferences(); len(objRefs) > 0 {
 		// check if we own this object
-		// since secrets and configmaps can be referenced by multiple MLAs, we need to find `owner` there
+		// since secrets and configmaps can be referenced by multiple templates, we need to find `owner` there
 		for _, ownerRef := range obj.GetOwnerReferences() {
 			if ownerRef.Kind == "NexusAlgorithmTemplate" && ownerRef.UID == owner.GetUID() {
 				return false, nil
@@ -418,7 +418,7 @@ func (c *Controller) isMissingOwnership(obj metav1.Object, owner metav1.Object) 
 
 func (c *Controller) syncSecretsToShard(secretNamespace string, controllerTemplate *v1.NexusAlgorithmTemplate, shardTemplate *v1.NexusAlgorithmTemplate, shard *shards.Shard, logger *klog.Logger) error {
 	for _, secretName := range shardTemplate.GetSecretNames() {
-		// Get the secret with the name specified in MachineLearningAlgorithm.spec
+		// Get the secret with the name specified in NexusAlgorithmTemplate.spec
 		secret, err := c.secretLister.Secrets(secretNamespace).Get(secretName)
 		// If the referenced Secret resource doesn't exist in the cluster where the controller is deployed, update the syncErr and move on to the next Secret
 		if k8serrors.IsNotFound(err) { // coverage-ignore
@@ -480,7 +480,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerTempla
 
 func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controllerTemplate *v1.NexusAlgorithmTemplate, shardTemplate *v1.NexusAlgorithmTemplate, shard *shards.Shard, logger *klog.Logger) error {
 	for _, configMapName := range shardTemplate.GetConfigMapNames() {
-		// Get the ConfigMap with the name specified in MachineLearningAlgorithm.spec
+		// Get the ConfigMap with the name specified in NexusAlgorithmTemplate.spec
 		configMap, err := c.configMapLister.ConfigMaps(configMapNamespace).Get(configMapName)
 		// If the referenced ConfigMap resource doesn't exist in the cluster where the controller is deployed, update syncErr and move on to the next ConfigMap
 		if k8serrors.IsNotFound(err) { // coverage-ignore
@@ -570,7 +570,7 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 		if !c.isOwnedBy(referencedSecret.ObjectMeta, template) {
 			refCopy.OwnerReferences = append(refCopy.OwnerReferences, metav1.OwnerReference{
 				APIVersion: v1.SchemeGroupVersion.String(),
-				Kind:       "MachineLearningAlgorithm",
+				Kind:       "NexusAlgorithmTemplate",
 				Name:       template.Name,
 				UID:        template.UID,
 			})
@@ -593,7 +593,7 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 		if !c.isOwnedBy(referencedConfigMap.ObjectMeta, template) {
 			refCopy.OwnerReferences = append(refCopy.OwnerReferences, metav1.OwnerReference{
 				APIVersion: v1.SchemeGroupVersion.String(),
-				Kind:       "MachineLearningAlgorithm",
+				Kind:       "NexusAlgorithmTemplate",
 				Name:       template.Name,
 				UID:        template.UID,
 			})
@@ -610,35 +610,35 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 }
 
 // syncHandler compares the actual state with the desired, and attempts to
-// converge the two. It then updates the Status block of the MachineLearningAlgorithm resource
+// converge the two. It then updates the Status block of the NexusAlgorithmTemplate resource
 // with the current status of the resource.
 func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName) error {
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "objectRef", objectRef)
 
-	// Get the MachineLearningAlgorithm resource with this namespace/name
+	// Get the NexusAlgorithmTemplate resource with this namespace/name
 	logger.V(4).Info(fmt.Sprintf("Syncing algorithm %s", objectRef.Name))
-	mla, err := c.templateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
+	template, err := c.templateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
 	if err != nil {
-		// The MachineLearningAlgorithm resource may no longer exist, in which case we stop
+		// The NexusAlgorithmTemplate resource may no longer exist, in which case we stop
 		// processing.
 		if k8serrors.IsNotFound(err) {
-			utilruntime.HandleErrorWithContext(ctx, err, "MachineLearningAlgorithm referenced by item in work queue no longer exists", "objectReference", objectRef)
+			utilruntime.HandleErrorWithContext(ctx, err, "NexusAlgorithmTemplate referenced by item in work queue no longer exists", "objectReference", objectRef)
 			return nil
 		}
 
 		return err
 	}
 
-	mla, err = c.reportTemplateInitCondition(mla)
+	template, err = c.reportTemplateInitCondition(template)
 	// requeue in case status update fails
 	if err != nil {
 		return err
 	}
 
-	err = c.adoptReferences(mla)
+	err = c.adoptReferences(template)
 	// requeue in case we can't take ownership of referenced secrets/configs
 	if err != nil {
-		logger.V(4).Error(err, fmt.Sprintf("Invalid machine learning algorithm resource: %s", mla.Name))
+		logger.V(4).Error(err, fmt.Sprintf("Invalid machine learning algorithm resource: %s", template.Name))
 		return err
 	}
 
@@ -646,20 +646,20 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		logger.V(4).Info(fmt.Sprintf("Syncing to shard %s", shard.Name))
 		shardTemplate, shardErr := shard.TemplateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
 
-		// update this MLA in case it exists and has drifted
-		if shardErr == nil && !reflect.DeepEqual(shardTemplate.Spec, mla.Spec) {
-			logger.V(4).Info(fmt.Sprintf("Content changed for MachineLearningAlgorithm %s, updating", mla.Name))
-			shardTemplate, shardErr = shard.UpdateMachineLearningAlgorithm(shardTemplate, mla.Spec, FieldManager)
+		// update this Template in case it exists and has drifted
+		if shardErr == nil && !reflect.DeepEqual(shardTemplate.Spec, template.Spec) {
+			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmTemplate %s, updating", template.Name))
+			shardTemplate, shardErr = shard.UpdateMachineLearningAlgorithm(shardTemplate, template.Spec, FieldManager)
 			// requeue on error
 			if shardErr != nil {
 				return shardErr
 			}
 		}
 
-		// if MachineLearningAlgorithm has not been created yet, create a new one in this shard
+		// if NexusAlgorithmTemplate has not been created yet, create a new one in this shard
 		if k8serrors.IsNotFound(shardErr) {
 			logger.V(4).Info(fmt.Sprintf("Algorithm %s not found in shard %s, creating", objectRef.Name, shard.Name))
-			shardTemplate, shardErr = shard.CreateMachineLearningAlgorithm(mla.Name, mla.Namespace, mla.Spec, FieldManager)
+			shardTemplate, shardErr = shard.CreateMachineLearningAlgorithm(template.Name, template.Namespace, template.Spec, FieldManager)
 		}
 
 		// requeue on error
@@ -669,7 +669,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		}
 
 		logger.V(4).Info(fmt.Sprintf("Syncing secrets to shard %s", shard.Name))
-		shardErr = c.syncSecretsToShard(mla.Namespace, mla, shardTemplate, shard, &logger)
+		shardErr = c.syncSecretsToShard(template.Namespace, template, shardTemplate, shard, &logger)
 		// requeue on error
 		if shardErr != nil {
 			logger.V(4).Error(shardErr, fmt.Sprintf("Error syncing secrets on shard %s", shard.Name))
@@ -677,7 +677,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		}
 
 		logger.V(4).Info(fmt.Sprintf("Syncing configmaps to shard %s", shard.Name))
-		shardErr = c.syncConfigMapsToShard(mla.Namespace, mla, shardTemplate, shard, &logger)
+		shardErr = c.syncConfigMapsToShard(template.Namespace, template, shardTemplate, shard, &logger)
 		// requeue on error
 		if shardErr != nil {
 			logger.V(4).Error(shardErr, fmt.Sprintf("Error syncing configMaps on shard %s", shard.Name))
@@ -685,17 +685,17 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		}
 	}
 
-	// Finally, we update the status block of the MachineLearningAlgorithm resource in the controller cluster to reflect the
+	// Finally, we update the status block of the NexusAlgorithmTemplate resource in the controller cluster to reflect the
 	// current state of the world across all Shards
 
-	logger.V(4).Info(fmt.Sprintf("Processed all shards, updating status for %s", mla.Name))
-	mla, err = c.reportMlaSyncedCondition(mla, mla.GetSecretNames(), mla.GetConfigMapNames(), c.shardNames())
+	logger.V(4).Info(fmt.Sprintf("Processed all shards, updating status for %s", template.Name))
+	template, err = c.reportTemplateSyncedCondition(template, template.GetSecretNames(), template.GetConfigMapNames(), c.shardNames())
 	if err != nil {
 		logger.V(4).Error(err, "Error setting ready status condition")
 		return err
 	}
 
-	c.recorder.Event(mla, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(template, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
@@ -709,7 +709,7 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 	logger := klog.FromContext(ctx)
 
 	// Start the informer factories to begin populating the informer caches
-	logger.Info("Starting MachineLearningAlgorithm controller")
+	logger.Info("Starting NexusAlgorithmTemplate controller")
 
 	// Wait for the caches to be synced before starting workers
 	logger.Info("Waiting for informer caches to sync")
@@ -726,7 +726,7 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 	logger.Info("Shard informers synced")
 
 	logger.Info("Starting workers", "count", workers)
-	// Launch workers to process MachineLearningAlgorithm resources
+	// Launch workers to process NexusAlgorithmTemplate resources
 	for i := 0; i < workers; i++ {
 		go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 	}
