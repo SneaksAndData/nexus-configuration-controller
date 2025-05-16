@@ -252,7 +252,7 @@ func newTemplate(name string, secret *corev1.Secret, configMap *corev1.ConfigMap
 			Args:    cargs,
 			RuntimeEnvironment: &nexusv1.NexusAlgorithmRuntimeEnvironment{
 				EnvironmentVariables:       nil,
-				MappedEnvironmentVariables: nil,
+				MappedEnvironmentVariables: envFrom,
 				Annotations:                nil,
 				DeadlineSeconds:            nil,
 				MaximumRetries:             nil,
