@@ -1,15 +1,15 @@
-{{- if .Values.rbac.clusterRole.mlaEditor.create -}}
+{{- if .Values.rbac.clusterRole.templateEditor.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "app.clusteRole.mlaEditor" . }}
+  name: {{ include "app.clusteRole.templateEditor" . }}
   labels:
     rbac.authorization.k8s.io/aggregate-to-edit: "true"    
     {{- include "app.labels" $ | nindent 4 }}
-    {{- with .Values.rbac.clusterRole.mlaEditor.additionalLabels }}
+    {{- with .Values.rbac.clusterRole.templateEditor.additionalLabels }}
       {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with .Values.rbac.clusterRole.mlaEditor.additionalAnnotations }}
+  {{- with .Values.rbac.clusterRole.templateEditor.additionalAnnotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -26,8 +26,8 @@ rules:
       - "science.sneaksanddata.com"
     resources:
       - events
-      - machinelearningalgorithms
-      - machinelearningalgorithms/status
-      - machinelearningalgorithm
-      - machinelearningalgorithm/status
+      - nexusalgorithmtemplates
+      - nexusalgorithmtemplates/status
+      - nexusalgorithmtemplate
+      - nexusalgorithmtemplates/status
 {{- end }}

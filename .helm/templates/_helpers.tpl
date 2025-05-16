@@ -94,12 +94,12 @@ Generate the configmap editor cluster role name
 {{- end }}
 
 {{/*
-Generate the MLA editor cluster role name
+Generate the Template editor cluster role name
 */}}
-{{- define "app.clusteRole.mlaEditor" -}}
-{{- if .Values.rbac.clusterRole.mlaEditor.nameOverride }}
-{{- .Values.rbac.clusterRole.mlaEditor.nameOverride }}
+{{- define "app.clusteRole.templateEditor" -}}
+{{- if .Values.rbac.clusterRole.templateEditor.nameOverride }}
+{{- .Values.rbac.clusterRole.templateEditor.nameOverride }}
 {{- else }}
-{{- printf "%s-mla-editor" (include "app.fullname" .) }}
+{{- printf "%s-template-editor" (include "app.fullname" .) }}
 {{- end }}
 {{- end }}
