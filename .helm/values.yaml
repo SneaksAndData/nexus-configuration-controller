@@ -133,6 +133,9 @@ securityContext: {}
 
 # Nexus Configuration Controller settings
 controller:
+  # Log level for the controller
+  logLevel: INFO
+  
   # kubeconfig location for the NCC. Defaults to InClusterConfig if not provided (empty string)
   # If provided, must be mounted via a volumeMount
   kubeConfigPath: ""
