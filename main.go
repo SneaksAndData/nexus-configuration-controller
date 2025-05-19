@@ -18,6 +18,8 @@ package main
 
 import (
 	"flag"
+	"github.com/SneaksAndData/nexus-configuration-controller/pkg/models"
+	nexusconf "github.com/SneaksAndData/nexus-core/pkg/configurations"
 	clientset "github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned"
 	informers "github.com/SneaksAndData/nexus-core/pkg/generated/informers/externalversions"
 	"github.com/SneaksAndData/nexus-core/pkg/shards"
@@ -30,40 +32,15 @@ import (
 	"time"
 )
 
-var (
-	alias                      string
-	controllerConfigPath       string
-	shardConfigPath            string
-	controllerNamespace        string
-	logLevel                   string
-	workers                    int
-	failureRateBaseDelay       string
-	failureRateMaxDelay        string
-	rateLimitElementsPerSecond int
-	rateLimitElementsBurst     int
-)
-
-// TODO: change to config (Viper)
-func init() {
-	flag.StringVar(&shardConfigPath, "shards-cfg", "", "Path to a directory containing *.kubeconfig files for Shards.")
-	flag.StringVar(&controllerConfigPath, "controller-cfg", "", "Path to a kubeconfig file for the controller cluster.")
-	flag.StringVar(&alias, "alias", "", "Alias for the controller cluster.")
-	flag.StringVar(&controllerNamespace, "namespace", "", "Namespace the controller is deployed to.")
-	flag.IntVar(&workers, "workers", 2, "Number of worker threads.")
-	flag.StringVar(&failureRateBaseDelay, "failure-rate-base-delay", "30ms", "Base delay for exponential failure backoff, milliseconds.")
-	flag.StringVar(&failureRateMaxDelay, "failure-rate-max-delay", "5s", "Max delay for exponential failure backoff, seconds.")
-	flag.IntVar(&rateLimitElementsPerSecond, "rate-limit-per-second", 50, "Max number of resources to process per second.")
-	flag.IntVar(&rateLimitElementsBurst, "rate-limit-burst", 300, "Burst this number of elements before rate limit kicks in.")
-	flag.StringVar(&logLevel, "log-level", "INFO", "Log level for the controller.")
-}
-
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
 	// set up signals so we handle the shutdown signal gracefully
 	ctx := signals.SetupSignalHandler()
-	appLogger, err := telemetry.ConfigureLogger(ctx, map[string]string{}, logLevel)
+	appConfig := nexusconf.LoadConfig[models.AppConfig](ctx)
+
+	appLogger, err := telemetry.ConfigureLogger(ctx, map[string]string{}, appConfig.LogLevel)
 	ctx = telemetry.WithStatsd(ctx, "nexus_configuration_controller")
 	klog.SetSlogLogger(appLogger)
 	logger := klog.FromContext(ctx)
@@ -72,7 +49,7 @@ func main() {
 		logger.Error(err, "One of the logging handlers cannot be configured")
 	}
 
-	controllerCfg, err := clientcmd.BuildConfigFromFlags("", controllerConfigPath)
+	controllerCfg, err := clientcmd.BuildConfigFromFlags("", appConfig.ControllerConfigPath)
 	if err != nil {
 		logger.Error(err, "Error building in-cluster kubeconfig for the controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -90,10 +67,10 @@ func main() {
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(controllerNamespace))
-	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(controllerNamespace))
+	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(appConfig.ControllerNamespace))
+	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(appConfig.ControllerNamespace))
 
-	shardClients, shardLoaderError := shards.LoadClients(shardConfigPath, controllerNamespace, logger)
+	shardClients, shardLoaderError := shards.LoadClients(appConfig.ShardConfigPath, appConfig.ControllerNamespace, logger)
 	if shardLoaderError != nil {
 		logger.Error(shardLoaderError, "unable to initialize shard clients")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -105,33 +82,19 @@ func main() {
 		connectedShards = append(connectedShards, shardClient.ToShard(controllerCfg.ServerName, ctx))
 	}
 
-	backOffBaseDelay, err := time.ParseDuration(failureRateBaseDelay)
-
-	if err != nil {
-		logger.Error(err, "Invalid backoff delay value provided {backoffValue}", failureRateBaseDelay)
-		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
-
-	backOffMaxDelay, err := time.ParseDuration(failureRateMaxDelay)
-
-	if err != nil {
-		logger.Error(err, "Invalid backoff max value provided {failureRateMaxDelay}", failureRateMaxDelay)
-		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
-
 	controller, controllerCreationErr := NewController(
 		ctx,
-		controllerNamespace,
+		appConfig.ControllerNamespace,
 		controllerClient,
 		controllerNexusClient,
 		connectedShards,
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
 		controllerNexusInformerFactory.Science().V1().NexusAlgorithmTemplates(),
-		backOffBaseDelay,
-		backOffMaxDelay,
-		rateLimitElementsPerSecond,
-		rateLimitElementsBurst,
+		appConfig.FailureRateBaseDelay,
+		appConfig.FailureRateMaxDelay,
+		appConfig.RateLimitElementsPerSecond,
+		appConfig.RateLimitElementsBurst,
 	)
 
 	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
@@ -144,7 +107,7 @@ func main() {
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	if err = controller.Run(ctx, workers); err != nil {
+	if err = controller.Run(ctx, appConfig.Workers); err != nil {
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
