@@ -27,7 +27,7 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	ktesting "k8s.io/klog/v2/ktesting"
+	"k8s.io/klog/v2/ktesting"
 	"reflect"
 	"testing"
 	"time"
@@ -55,17 +55,18 @@ type FakeControllerInformers = FakeInformers
 
 type FakeShardInformers = FakeInformers
 
-type ApiFixture struct {
+type APIFixture struct {
 	templateListResults  []*nexusv1.NexusAlgorithmTemplate
+	workgroupListResults []*nexusv1.NexusAlgorithmWorkgroup
 	secretListResults    []*corev1.Secret
 	configMapListResults []*corev1.ConfigMap
 
-	existingCoreObjects     []runtime.Object
-	existingTemplateObjects []runtime.Object
+	existingCoreObjects  []runtime.Object
+	existingNexusObjects []runtime.Object
 }
 
-type ControllerFixture = ApiFixture
-type NexusFixture = ApiFixture
+type ControllerFixture = APIFixture
+type NexusFixture = APIFixture
 
 type fixture struct {
 	t *testing.T
@@ -77,13 +78,15 @@ type fixture struct {
 	shardKubeClient  *k8sfake.Clientset
 	// Objects to put in the store for controller cluster
 	templateLister  []*nexusv1.NexusAlgorithmTemplate
+	workgroupLister []*nexusv1.NexusAlgorithmWorkgroup
 	secretLister    []*corev1.Secret
 	configMapLister []*corev1.ConfigMap
 
 	// Objects to put in the store for shard cluster
-	shardTemplateLister []*nexusv1.NexusAlgorithmTemplate
-	shardSecretLister   []*corev1.Secret
-	shardConfigLister   []*corev1.ConfigMap
+	shardTemplateLister  []*nexusv1.NexusAlgorithmTemplate
+	shardWorkgroupLister []*nexusv1.NexusAlgorithmWorkgroup
+	shardSecretLister    []*corev1.Secret
+	shardConfigLister    []*corev1.ConfigMap
 
 	// Actions expected to happen on the controller and shard clients respectively.
 	controllerKubeActions  []core.Action
@@ -104,12 +107,14 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 
 	f.templateLister = []*nexusv1.NexusAlgorithmTemplate{}
+	f.workgroupLister = []*nexusv1.NexusAlgorithmWorkgroup{}
 	f.secretLister = []*corev1.Secret{}
 	f.configMapLister = []*corev1.ConfigMap{}
 	f.controllerObjects = []runtime.Object{}
 	f.controllerKubeObjects = []runtime.Object{}
 
 	f.shardTemplateLister = []*nexusv1.NexusAlgorithmTemplate{}
+	f.shardWorkgroupLister = []*nexusv1.NexusAlgorithmWorkgroup{}
 	f.shardSecretLister = []*corev1.Secret{}
 	f.shardConfigLister = []*corev1.ConfigMap{}
 	f.shardObjects = []runtime.Object{}
@@ -121,15 +126,17 @@ func newFixture(t *testing.T) *fixture {
 // and adds existing objects to the respective containers
 func (f *fixture) configure(controllerFixture *ControllerFixture, nexusShardFixture *NexusFixture) *fixture {
 	f.templateLister = append(f.templateLister, controllerFixture.templateListResults...)
+	f.workgroupLister = append(f.workgroupLister, controllerFixture.workgroupListResults...)
 	f.secretLister = append(f.secretLister, controllerFixture.secretListResults...)
 	f.configMapLister = append(f.configMapLister, controllerFixture.configMapListResults...)
-	f.controllerObjects = append(f.controllerObjects, controllerFixture.existingTemplateObjects...)
+	f.controllerObjects = append(f.controllerObjects, controllerFixture.existingNexusObjects...)
 	f.controllerKubeObjects = append(f.controllerKubeObjects, controllerFixture.existingCoreObjects...)
 
 	f.shardTemplateLister = append(f.shardTemplateLister, nexusShardFixture.templateListResults...)
+	f.shardWorkgroupLister = append(f.shardWorkgroupLister, nexusShardFixture.workgroupListResults...)
 	f.shardSecretLister = append(f.shardSecretLister, nexusShardFixture.secretListResults...)
 	f.shardConfigLister = append(f.shardConfigLister, nexusShardFixture.configMapListResults...)
-	f.shardObjects = append(f.shardObjects, nexusShardFixture.existingTemplateObjects...)
+	f.shardObjects = append(f.shardObjects, nexusShardFixture.existingNexusObjects...)
 	f.shardKubeObjects = append(f.shardKubeObjects, nexusShardFixture.existingCoreObjects...)
 
 	return f
@@ -150,6 +157,21 @@ func expectedTemplate(template *nexusv1.NexusAlgorithmTemplate, secret *corev1.S
 	}
 
 	return templateCopy
+}
+
+func expectedWorkgroup(workgroup *nexusv1.NexusAlgorithmWorkgroup, conditions []metav1.Condition) *nexusv1.NexusAlgorithmWorkgroup {
+	workgroupCopy := workgroup.DeepCopy()
+	workgroupCopy.Status.Conditions = conditions
+
+	return workgroupCopy
+}
+
+func expectedShardWorkgroup(workgroup *nexusv1.NexusAlgorithmWorkgroup, name string) *nexusv1.NexusAlgorithmWorkgroup {
+	workgroupCopy := workgroup.DeepCopy()
+	workgroupCopy.UID = types.UID(name)
+	workgroupCopy.Labels = expectedLabels()
+
+	return workgroupCopy
 }
 
 func expectedLabels() map[string]string {
@@ -197,6 +219,36 @@ func expectedShardConfigMap(configMap *corev1.ConfigMap, templates []*nexusv1.Ne
 	}
 
 	return configMapCopy
+}
+
+func newWorkgroup(name string, onShard bool, clusterName string, status *nexusv1.NexusAlgorithmWorkgroupStatus) *nexusv1.NexusAlgorithmWorkgroup {
+	var labels map[string]string
+	if onShard {
+		labels = expectedLabels()
+	}
+
+	workgroup := &nexusv1.NexusAlgorithmWorkgroup{
+		TypeMeta: metav1.TypeMeta{APIVersion: nexusv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: metav1.NamespaceDefault,
+			Labels:    labels,
+			UID:       types.UID(name),
+		},
+		Spec: nexusv1.NexusAlgorithmWorkgroupSpec{
+			Description:  "test workgroup",
+			Capabilities: make(map[string]bool),
+			Cluster:      clusterName,
+			Tolerations:  []corev1.Toleration{},
+			Affinity:     &corev1.Affinity{},
+		},
+	}
+
+	if status != nil {
+		workgroup.Status = *status
+	}
+
+	return workgroup
 }
 
 func newTemplate(name string, secret *corev1.Secret, configMap *corev1.ConfigMap, onShard bool, status *nexusv1.NexusAlgorithmStatus) *nexusv1.NexusAlgorithmTemplate {
@@ -365,6 +417,23 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 				t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 					a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintSideBySide(expCopy, objCopy))
 			}
+		case *nexusv1.NexusAlgorithmWorkgroup:
+			// avoid issues with time drift
+			currentTime := metav1.Now()
+			expCopy := expObject.DeepCopyObject().(*nexusv1.NexusAlgorithmWorkgroup)
+			for ix := range expCopy.Status.Conditions {
+				expCopy.Status.Conditions[ix].LastTransitionTime = currentTime
+			}
+
+			objCopy := object.DeepCopyObject().(*nexusv1.NexusAlgorithmWorkgroup)
+			for ix := range objCopy.Status.Conditions {
+				objCopy.Status.Conditions[ix].LastTransitionTime = currentTime
+			}
+
+			if !reflect.DeepEqual(expCopy, objCopy) {
+				t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
+					a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintSideBySide(expCopy, objCopy))
+			}
 		default:
 			if !reflect.DeepEqual(expObject, object) {
 				t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
@@ -399,6 +468,8 @@ func filterInformerActions(actions []core.Action) []core.Action {
 		if len(action.GetNamespace()) == 0 &&
 			(action.Matches("list", "NexusAlgorithmTemplates") ||
 				action.Matches("watch", "NexusAlgorithmTemplates") ||
+				action.Matches("list", "NexusAlgorithmWorkgroups") ||
+				action.Matches("watch", "NexusAlgorithmWorkgroups") ||
 				action.Matches("list", "configmaps") ||
 				action.Matches("watch", "configmaps") ||
 				action.Matches("list", "secrets") ||
@@ -412,6 +483,8 @@ func filterInformerActions(actions []core.Action) []core.Action {
 }
 
 func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControllerInformers, *FakeShardInformers) {
+	// CRD fakes do not properly support OpenAPI schema gen, see https://github.com/kubernetes/kubernetes/issues/126850
+	// Using deprecated clients for now
 	f.controllerNexusClient = fake.NewSimpleClientset(f.controllerObjects...)
 	f.controllerKubeClient = k8sfake.NewSimpleClientset(f.controllerKubeObjects...)
 
@@ -431,10 +504,12 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 		f.shardKubeClient,
 		f.shardNexusClient,
 		shardNexusInf.Science().V1().NexusAlgorithmTemplates(),
+		shardNexusInf.Science().V1().NexusAlgorithmWorkgroups(),
 		shardKubeInf.Core().V1().Secrets(),
 		shardKubeInf.Core().V1().ConfigMaps())
 
 	newShard.TemplateSynced = alwaysReady
+	newShard.WorkgroupSynced = alwaysReady
 	newShard.SecretsSynced = alwaysReady
 	newShard.ConfigMapsSynced = alwaysReady
 
@@ -449,6 +524,7 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 		controllerKubeInf.Core().V1().Secrets(),
 		controllerKubeInf.Core().V1().ConfigMaps(),
 		controllerNexusInf.Science().V1().NexusAlgorithmTemplates(),
+		controllerNexusInf.Science().V1().NexusAlgorithmWorkgroups(),
 		30*time.Millisecond,
 		5*time.Second,
 		50,
@@ -456,6 +532,7 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 	)
 
 	c.templateSynced = alwaysReady
+	c.workgroupSynced = alwaysReady
 	c.secretsSynced = alwaysReady
 	c.configMapsSynced = alwaysReady
 	c.recorder = &record.FakeRecorder{}
@@ -466,6 +543,14 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 
 	for _, d := range f.shardTemplateLister {
 		_ = shardNexusInf.Science().V1().NexusAlgorithmTemplates().Informer().GetIndexer().Add(d)
+	}
+
+	for _, d := range f.workgroupLister {
+		_ = controllerNexusInf.Science().V1().NexusAlgorithmWorkgroups().Informer().GetIndexer().Add(d)
+	}
+
+	for _, d := range f.shardWorkgroupLister {
+		_ = shardNexusInf.Science().V1().NexusAlgorithmWorkgroups().Informer().GetIndexer().Add(d)
 	}
 
 	for _, d := range f.secretLister {
@@ -510,7 +595,7 @@ func (f *fixture) checkActions(expected []core.Action, actual []core.Action) {
 	}
 }
 
-func (f *fixture) runController(ctx context.Context, templateRefs []cache.ObjectName, startInformers bool, expectError bool) {
+func (f *fixture) runController(ctx context.Context, templateRefs []cache.ObjectName, workgroupRefs []cache.ObjectName, startInformers bool, expectError bool) {
 	controllerRef, controllerInformers, shardInformers := f.newController(ctx)
 	if startInformers {
 		controllerInformers.nexusInformers.Start(ctx.Done())
@@ -521,11 +606,20 @@ func (f *fixture) runController(ctx context.Context, templateRefs []cache.Object
 	}
 
 	for _, templateRef := range templateRefs {
-		err := controllerRef.syncHandler(ctx, templateRef)
+		err := controllerRef.templateSyncHandler(ctx, templateRef)
 		if !expectError && err != nil {
 			f.t.Errorf("error syncing template: %v", err)
 		} else if expectError && err == nil {
 			f.t.Error("expected error syncing template, got nil")
+		}
+	}
+
+	for _, workgroupRef := range workgroupRefs {
+		err := controllerRef.workgroupSyncHandler(ctx, workgroupRef)
+		if !expectError && err != nil {
+			f.t.Errorf("error syncing workgroup: %v", err)
+		} else if expectError && err == nil {
+			f.t.Error("expected error syncing workgroup, got nil")
 		}
 	}
 
@@ -553,13 +647,25 @@ func (f *fixture) runObjectHandler(ctx context.Context, objs []interface{}, star
 	f.checkActions(f.shardKubeActions, f.shardKubeClient.Actions())
 }
 
-func (f *fixture) run(ctx context.Context, templateRefs []cache.ObjectName, expectError bool) {
-	f.runController(ctx, templateRefs, true, expectError)
+func (f *fixture) run(ctx context.Context, templateRefs []cache.ObjectName, workgroupRefs []cache.ObjectName, expectError bool) {
+	f.runController(ctx, templateRefs, workgroupRefs, true, expectError)
 }
 
 func getRef(template *nexusv1.NexusAlgorithmTemplate) cache.ObjectName {
 	ref := cache.MetaObjectToName(template)
 	return ref
+}
+
+func getWorkgroupRef(workgroup *nexusv1.NexusAlgorithmWorkgroup) cache.ObjectName {
+	ref := cache.MetaObjectToName(workgroup)
+	return ref
+}
+
+// expectControllerUpdateWorkgroupStatusAction sets expectations for the workgroup actions in a controller cluster
+// for a workgroup in the controller cluster we only expect a status update
+func (f *fixture) expectControllerUpdateWorkgroupStatusAction(workgroup *nexusv1.NexusAlgorithmWorkgroup) {
+	updateWorkgroupStatusAction := core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, "status", workgroup.Namespace, workgroup)
+	f.controllerNexusActions = append(f.controllerNexusActions, updateWorkgroupStatusAction)
 }
 
 // expectControllerUpdateTemplateStatusAction sets expectations for the resource actions in a controller cluster
@@ -584,6 +690,16 @@ func (f *fixture) expectShardActions(shardTemplate *nexusv1.NexusAlgorithmTempla
 
 	if templateConfigMap != nil {
 		f.shardKubeActions = append(f.shardKubeActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, templateConfigMap.Namespace, templateConfigMap))
+	}
+}
+
+// expectShardWorkgroupActions sets expectations for the workgroup actions in a shard cluster
+// for workgroup in the shard cluster we expect the following: Workgroup is created or updated
+func (f *fixture) expectShardWorkgroupActions(shardWorkgroup *nexusv1.NexusAlgorithmWorkgroup, updated bool) {
+	if !updated {
+		f.shardNexusActions = append(f.shardNexusActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, shardWorkgroup.Namespace, shardWorkgroup))
+	} else {
+		f.shardNexusActions = append(f.shardNexusActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, shardWorkgroup.Namespace, shardWorkgroup))
 	}
 }
 
@@ -630,8 +746,8 @@ func provisionControllerResources() (*corev1.Secret, *corev1.ConfigMap, *nexusv1
 }
 
 func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap, template *nexusv1.NexusAlgorithmTemplate) (*corev1.Secret, *corev1.ConfigMap) {
-	ownedtemplateSecret := templateSecret.DeepCopy()
-	ownedtemplateSecret.OwnerReferences = []metav1.OwnerReference{
+	ownedTemplateSecret := templateSecret.DeepCopy()
+	ownedTemplateSecret.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
@@ -639,8 +755,8 @@ func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateCo
 			UID:        template.UID,
 		},
 	}
-	ownedtemplateConfigMap := templateConfigMap.DeepCopy()
-	ownedtemplateConfigMap.OwnerReferences = []metav1.OwnerReference{
+	ownedTemplateConfigMap := templateConfigMap.DeepCopy()
+	ownedTemplateConfigMap.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
@@ -649,7 +765,7 @@ func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateCo
 		},
 	}
 
-	return ownedtemplateSecret, ownedtemplateConfigMap
+	return ownedTemplateSecret, ownedTemplateConfigMap
 }
 
 // TestCreatesTemplate test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
@@ -662,11 +778,11 @@ func TestCreatesTemplate(t *testing.T) {
 
 	f = f.configure(
 		&ControllerFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
-			secretListResults:       []*corev1.Secret{templateSecret},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
-			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
-			existingTemplateObjects: []runtime.Object{template},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:    []*corev1.Secret{templateSecret},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:  []runtime.Object{templateSecret, templateConfigMap},
+			existingNexusObjects: []runtime.Object{template},
 		},
 		&NexusFixture{},
 	)
@@ -694,25 +810,27 @@ func TestCreatesTemplate(t *testing.T) {
 		expectedShardConfigMap(templateConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template, "")}),
 		false)
 
-	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, []cache.ObjectName{}, false)
 	t.Log("Controller successfully created a new NexusAlgorithmTemplate and related secrets and configurations on the shard cluster")
 }
 
 // TestDetectsRogue tests the rogue secrets or configs are detected and reported as errors correctly
 func TestDetectsRogue(t *testing.T) {
+	// Note: this test consistently fails with non-deprecated fake clientset
+	// It also flakes occasionally with deprecated
 	f := newFixture(t)
 	templateSecret, templateConfigMap, template := provisionControllerResources()
-	ownedtemplateSecret, ownedtemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
+	ownedTemplateSecret, ownedTemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
 
 	_, ctx := ktesting.NewTestContext(t)
 
 	f = f.configure(
 		&ControllerFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
-			secretListResults:       []*corev1.Secret{templateSecret},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
-			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
-			existingTemplateObjects: []runtime.Object{template},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:    []*corev1.Secret{templateSecret},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:  []runtime.Object{templateSecret, templateConfigMap},
+			existingNexusObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
 			secretListResults: []*corev1.Secret{templateSecret},
@@ -733,9 +851,9 @@ func TestDetectsRogue(t *testing.T) {
 		nil,
 		false)
 
-	f.expectedControllerUpdateActions(template, ownedtemplateSecret, ownedtemplateConfigMap, false)
+	f.expectedControllerUpdateActions(template, ownedTemplateSecret, ownedTemplateConfigMap, false)
 
-	f.run(ctx, []cache.ObjectName{getRef(template)}, true)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, []cache.ObjectName{}, true)
 	t.Log("Controller successfully detected a rogue resource on the shard cluster")
 }
 
@@ -750,15 +868,15 @@ func TestHandlesNotExistingResource(t *testing.T) {
 		&ControllerFixture{
 			templateListResults: []*nexusv1.NexusAlgorithmTemplate{},
 
-			secretListResults:       []*corev1.Secret{},
-			configMapListResults:    []*corev1.ConfigMap{},
-			existingCoreObjects:     []runtime.Object{},
-			existingTemplateObjects: []runtime.Object{},
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingNexusObjects: []runtime.Object{},
 		},
 		&NexusFixture{},
 	)
 
-	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, []cache.ObjectName{}, false)
 	t.Log("Controller successfully reported an error for the missing Template resource")
 }
 
@@ -772,10 +890,10 @@ func TestSkipsInvalidTemplate(t *testing.T) {
 		&ControllerFixture{
 			templateListResults: []*nexusv1.NexusAlgorithmTemplate{template},
 
-			secretListResults:       []*corev1.Secret{},
-			configMapListResults:    []*corev1.ConfigMap{},
-			existingCoreObjects:     []runtime.Object{},
-			existingTemplateObjects: []runtime.Object{template},
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingNexusObjects: []runtime.Object{template},
 		},
 		&NexusFixture{},
 	)
@@ -788,7 +906,7 @@ func TestSkipsInvalidTemplate(t *testing.T) {
 		),
 	}))
 
-	f.run(ctx, []cache.ObjectName{getRef(template)}, true)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, []cache.ObjectName{}, true)
 	t.Log("Controller skipped a misconfigured Template resource")
 }
 
@@ -839,18 +957,18 @@ func TestUpdatesTemplateSecretAndConfig(t *testing.T) {
 	f = f.configure(
 		// controller lister returns a new secret and a new configmap
 		&ControllerFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
-			secretListResults:       []*corev1.Secret{templateSecretUpdated},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMapUpdated},
-			existingCoreObjects:     []runtime.Object{templateSecretUpdated, templateConfigMapUpdated},
-			existingTemplateObjects: []runtime.Object{template},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:    []*corev1.Secret{templateSecretUpdated},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMapUpdated},
+			existingCoreObjects:  []runtime.Object{templateSecretUpdated, templateConfigMapUpdated},
+			existingNexusObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{templateOnShard},
-			secretListResults:       []*corev1.Secret{templateSecretOnShard},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMapOnShard},
-			existingCoreObjects:     []runtime.Object{templateSecretOnShard, templateConfigMapOnShard},
-			existingTemplateObjects: []runtime.Object{templateOnShard},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{templateOnShard},
+			secretListResults:    []*corev1.Secret{templateSecretOnShard},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMapOnShard},
+			existingCoreObjects:  []runtime.Object{templateSecretOnShard, templateConfigMapOnShard},
+			existingNexusObjects: []runtime.Object{templateOnShard},
 		},
 	)
 
@@ -859,7 +977,7 @@ func TestUpdatesTemplateSecretAndConfig(t *testing.T) {
 		expectedTemplate(template, templateSecretUpdated, templateConfigMapUpdated, []string{"shard0"}, nil),
 		templateOnShard, templateSecretOnShardUpdated, templateConfigMapOnShardUpdated, false)
 
-	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, []cache.ObjectName{}, false)
 	t.Log("Controller successfully updated a Secret and a ConfigMap in the shard cluster after those were updated in the controller cluster")
 }
 
@@ -908,17 +1026,17 @@ func TestCreatesSharedResources(t *testing.T) {
 			secretListResults:    []*corev1.Secret{ownedTemplate1Secret},
 			configMapListResults: []*corev1.ConfigMap{ownedTemplate1ConfigMap},
 			existingCoreObjects:  []runtime.Object{ownedTemplate1Secret, ownedTemplate1ConfigMap},
-			existingTemplateObjects: []runtime.Object{expectedTemplate(template1, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
+			existingNexusObjects: []runtime.Object{expectedTemplate(template1, templateSecret, templateConfigMap, []string{"shard0"}, []metav1.Condition{
 				*nexusv1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionTrue, "Algorithm \"test1\" ready"),
 			}), template2},
 		},
 		// shard cluster now has a Template, a secret and a configmap
 		&NexusFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{templateOnShard1},
-			secretListResults:       []*corev1.Secret{templateSecretOnShard1},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigOnShard1},
-			existingCoreObjects:     []runtime.Object{templateSecretOnShard1, templateConfigOnShard1},
-			existingTemplateObjects: []runtime.Object{templateOnShard1},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{templateOnShard1},
+			secretListResults:    []*corev1.Secret{templateSecretOnShard1},
+			configMapListResults: []*corev1.ConfigMap{templateConfigOnShard1},
+			existingCoreObjects:  []runtime.Object{templateSecretOnShard1, templateConfigOnShard1},
+			existingNexusObjects: []runtime.Object{templateOnShard1},
 		},
 	)
 	f.expectControllerUpdateTemplateStatusAction(expectedTemplate(template2, nil, nil, nil, []metav1.Condition{
@@ -940,7 +1058,7 @@ func TestCreatesSharedResources(t *testing.T) {
 		expectedShardSecret(templateSecretOnShard1, []*nexusv1.NexusAlgorithmTemplate{templateOnShard1, expectedShardTemplate(template2, "")}),
 		expectedShardConfigMap(templateConfigOnShard1, []*nexusv1.NexusAlgorithmTemplate{templateOnShard1, expectedShardTemplate(template2, "")}))
 
-	f.run(ctx, []cache.ObjectName{getRef(template2)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template2)}, []cache.ObjectName{}, false)
 	t.Log("Controller successfully created a second Template resource referencing the same Secret and ConfigMap in the controller cluster")
 }
 
@@ -957,15 +1075,15 @@ func TestTakesOwnership(t *testing.T) {
 
 	f = f.configure(
 		&ControllerFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
-			secretListResults:       []*corev1.Secret{templateSecret},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
-			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
-			existingTemplateObjects: []runtime.Object{template},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:    []*corev1.Secret{templateSecret},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:  []runtime.Object{templateSecret, templateConfigMap},
+			existingNexusObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{rogueTemplate},
-			existingTemplateObjects: []runtime.Object{rogueTemplate},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{rogueTemplate},
+			existingNexusObjects: []runtime.Object{rogueTemplate},
 		},
 	)
 
@@ -989,7 +1107,7 @@ func TestTakesOwnership(t *testing.T) {
 		expectedShardConfigMap(templateConfigMap, []*nexusv1.NexusAlgorithmTemplate{expectedShardTemplate(template, "")}),
 		true)
 
-	f.run(ctx, []cache.ObjectName{getRef(template)}, false)
+	f.run(ctx, []cache.ObjectName{getRef(template)}, []cache.ObjectName{}, false)
 	t.Log("Controller successfully took ownership of a NexusAlgorithmTemplate and related secrets and configurations on the shard cluster")
 }
 
@@ -1021,18 +1139,18 @@ func TestDeletesTemplate(t *testing.T) {
 	f = f.configure(
 		// controller lister returns a new secret and a new configmap
 		&ControllerFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{template},
-			secretListResults:       []*corev1.Secret{templateSecret},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMap},
-			existingCoreObjects:     []runtime.Object{templateSecret, templateConfigMap},
-			existingTemplateObjects: []runtime.Object{template},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{template},
+			secretListResults:    []*corev1.Secret{templateSecret},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMap},
+			existingCoreObjects:  []runtime.Object{templateSecret, templateConfigMap},
+			existingNexusObjects: []runtime.Object{template},
 		},
 		&NexusFixture{
-			templateListResults:     []*nexusv1.NexusAlgorithmTemplate{templateOnShard},
-			secretListResults:       []*corev1.Secret{templateSecretOnShard},
-			configMapListResults:    []*corev1.ConfigMap{templateConfigMapOnShard},
-			existingCoreObjects:     []runtime.Object{templateSecretOnShard, templateConfigMapOnShard},
-			existingTemplateObjects: []runtime.Object{templateOnShard},
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{templateOnShard},
+			secretListResults:    []*corev1.Secret{templateSecretOnShard},
+			configMapListResults: []*corev1.ConfigMap{templateConfigMapOnShard},
+			existingCoreObjects:  []runtime.Object{templateSecretOnShard, templateConfigMapOnShard},
+			existingNexusObjects: []runtime.Object{templateOnShard},
 		},
 	)
 
@@ -1041,4 +1159,99 @@ func TestDeletesTemplate(t *testing.T) {
 
 	f.runObjectHandler(ctx, []interface{}{template}, true)
 	t.Log("Controller successfully deleted a Template for the shard after it was deleted from the controller cluster")
+}
+
+// TestCreatesWorkgroup test that workgroup creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
+func TestCreatesWorkgroup(t *testing.T) {
+	f := newFixture(t)
+	workgroup := newWorkgroup("test-workgroup", false, "shard0", nil)
+
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{},
+			workgroupListResults: []*nexusv1.NexusAlgorithmWorkgroup{workgroup},
+
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingNexusObjects: []runtime.Object{workgroup},
+		},
+		&NexusFixture{},
+	)
+
+	f.expectControllerUpdateWorkgroupStatusAction(expectedWorkgroup(workgroup, []metav1.Condition{
+		*nexusv1.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Workgroup \"test-workgroup\" initializing",
+		),
+	}))
+	f.expectControllerUpdateWorkgroupStatusAction(expectedWorkgroup(workgroup, []metav1.Condition{
+		*nexusv1.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Workgroup \"test-workgroup\" ready",
+		),
+	}))
+
+	f.expectShardWorkgroupActions(expectedShardWorkgroup(workgroup, ""), false)
+
+	f.run(ctx, []cache.ObjectName{}, []cache.ObjectName{getWorkgroupRef(workgroup)}, false)
+	t.Log("Controller successfully created a new NexusAlgorithmWorkgroup on the shard cluster")
+}
+
+// TestUpdatesWorkgroup test that workgroup update is handled correctly in connected shards
+func TestUpdatesWorkgroup(t *testing.T) {
+	f := newFixture(t)
+	workgroup := newWorkgroup("test-workgroup", false, "shard0", nil)
+	workgroupOnShard := newWorkgroup("test-workgroup", true, "shard0", nil)
+	workgroupUpdated := workgroup.DeepCopy()
+	workgroupUpdated.Spec.Tolerations = []corev1.Toleration{
+		{
+			Key:      "key",
+			Operator: corev1.TolerationOpExists,
+		},
+	}
+	workgroupOnShardUpdated := workgroupOnShard.DeepCopy()
+	workgroupOnShardUpdated.Spec.Tolerations = workgroupUpdated.Spec.Tolerations
+
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{},
+			workgroupListResults: []*nexusv1.NexusAlgorithmWorkgroup{workgroupUpdated},
+
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingNexusObjects: []runtime.Object{workgroupUpdated},
+		},
+		&NexusFixture{
+			workgroupListResults: []*nexusv1.NexusAlgorithmWorkgroup{workgroupOnShard},
+			existingNexusObjects: []runtime.Object{workgroupOnShard},
+		},
+	)
+
+	f.expectControllerUpdateWorkgroupStatusAction(expectedWorkgroup(workgroupUpdated, []metav1.Condition{
+		*nexusv1.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Workgroup \"test-workgroup\" initializing",
+		),
+	}))
+	f.expectControllerUpdateWorkgroupStatusAction(expectedWorkgroup(workgroupUpdated, []metav1.Condition{
+		*nexusv1.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Workgroup \"test-workgroup\" ready",
+		),
+	}))
+
+	f.expectShardWorkgroupActions(expectedShardWorkgroup(workgroupOnShardUpdated, "test-workgroup"), true)
+
+	f.run(ctx, []cache.ObjectName{}, []cache.ObjectName{getWorkgroupRef(workgroup)}, false)
+	t.Log("Controller successfully created a new NexusAlgorithmWorkgroup on the shard cluster")
 }

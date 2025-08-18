@@ -91,6 +91,7 @@ func main() {
 		controllerKubeInformerFactory.Core().V1().Secrets(),
 		controllerKubeInformerFactory.Core().V1().ConfigMaps(),
 		controllerNexusInformerFactory.Science().V1().NexusAlgorithmTemplates(),
+		controllerNexusInformerFactory.Science().V1().NexusAlgorithmWorkgroups(),
 		appConfig.FailureRateBaseDelay,
 		appConfig.FailureRateMaxDelay,
 		appConfig.RateLimitElementsPerSecond,
