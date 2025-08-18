@@ -79,7 +79,7 @@ func main() {
 
 	// only load kubeconfig files in the provided location
 	for _, shardClient := range shardClients {
-		connectedShards = append(connectedShards, shardClient.ToShard(controllerCfg.ServerName, ctx))
+		connectedShards = append(connectedShards, shardClient.ToShard(appConfig.Alias, ctx))
 	}
 
 	controller, controllerCreationErr := NewController(
