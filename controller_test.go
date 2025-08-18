@@ -486,10 +486,10 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 	// CRD fakes do not properly support OpenAPI schema gen, see https://github.com/kubernetes/kubernetes/issues/126850
 	// Using deprecated clients for now
 	f.controllerNexusClient = fake.NewSimpleClientset(f.controllerObjects...)
-	f.controllerKubeClient = k8sfake.NewClientset(f.controllerKubeObjects...)
+	f.controllerKubeClient = k8sfake.NewSimpleClientset(f.controllerKubeObjects...)
 
 	f.shardNexusClient = fake.NewSimpleClientset(f.shardObjects...)
-	f.shardKubeClient = k8sfake.NewClientset(f.shardKubeObjects...)
+	f.shardKubeClient = k8sfake.NewSimpleClientset(f.shardKubeObjects...)
 
 	controllerNexusInf := informers.NewSharedInformerFactory(f.controllerNexusClient, noResyncPeriodFunc())
 	controllerKubeInf := kubeinformers.NewSharedInformerFactory(f.controllerKubeClient, noResyncPeriodFunc())
@@ -816,6 +816,8 @@ func TestCreatesTemplate(t *testing.T) {
 
 // TestDetectsRogue tests the rogue secrets or configs are detected and reported as errors correctly
 func TestDetectsRogue(t *testing.T) {
+	// Note: this test consistently fails with non-deprecated fake clientset
+	// It also flakes occasionally with deprecated
 	f := newFixture(t)
 	templateSecret, templateConfigMap, template := provisionControllerResources()
 	ownedTemplateSecret, ownedTemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
