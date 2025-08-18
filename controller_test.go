@@ -221,12 +221,10 @@ func expectedShardConfigMap(configMap *corev1.ConfigMap, templates []*nexusv1.Ne
 	return configMapCopy
 }
 
-func newWorkgroup(name string, onShard bool, status *nexusv1.NexusAlgorithmWorkgroupStatus) *nexusv1.NexusAlgorithmWorkgroup {
+func newWorkgroup(name string, onShard bool, clusterName string, status *nexusv1.NexusAlgorithmWorkgroupStatus) *nexusv1.NexusAlgorithmWorkgroup {
 	var labels map[string]string
-	clusterName := "test-controller-cluster"
 	if onShard {
 		labels = expectedLabels()
-		clusterName = "shard0"
 	}
 
 	workgroup := &nexusv1.NexusAlgorithmWorkgroup{
@@ -696,12 +694,22 @@ func (f *fixture) expectShardActions(shardTemplate *nexusv1.NexusAlgorithmTempla
 }
 
 // expectShardWorkgroupActions sets expectations for the workgroup actions in a shard cluster
-// for workgroup in the shard cluster we expect the following: Workgroup is created
+// for workgroup in the shard cluster we expect the following: Workgroup is created or updated
 func (f *fixture) expectShardWorkgroupActions(shardWorkgroup *nexusv1.NexusAlgorithmWorkgroup, updated bool) {
 	if !updated {
 		f.shardNexusActions = append(f.shardNexusActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, shardWorkgroup.Namespace, shardWorkgroup))
 	} else {
 		f.shardNexusActions = append(f.shardNexusActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, shardWorkgroup.Namespace, shardWorkgroup))
+	}
+}
+
+// expectControllerWorkgroupActions sets expectations for the workgroup actions in a controller cluster
+// for workgroup in the controller cluster we expect the following: Workgroup is created or updated
+func (f *fixture) expectControllerWorkgroupActions(workgroup *nexusv1.NexusAlgorithmWorkgroup, updated bool) {
+	if !updated {
+		f.shardNexusActions = append(f.controllerNexusActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, workgroup.Namespace, workgroup))
+	} else {
+		f.shardNexusActions = append(f.controllerNexusActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, workgroup.Namespace, workgroup))
 	}
 }
 
@@ -1161,10 +1169,10 @@ func TestDeletesTemplate(t *testing.T) {
 	t.Log("Controller successfully deleted a Template for the shard after it was deleted from the controller cluster")
 }
 
-// TestCreatesWorkgroup test that workgroup creation creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
+// TestCreatesWorkgroup test that workgroup creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
 func TestCreatesWorkgroup(t *testing.T) {
 	f := newFixture(t)
-	workgroup := newWorkgroup("test-workgroup", false, nil)
+	workgroup := newWorkgroup("test-workgroup", false, "shard0", nil)
 
 	_, ctx := ktesting.NewTestContext(t)
 
@@ -1197,6 +1205,60 @@ func TestCreatesWorkgroup(t *testing.T) {
 	}))
 
 	f.expectShardWorkgroupActions(expectedShardWorkgroup(workgroup, ""), false)
+
+	f.run(ctx, []cache.ObjectName{}, []cache.ObjectName{getWorkgroupRef(workgroup)}, false)
+	t.Log("Controller successfully created a new NexusAlgorithmWorkgroup on the shard cluster")
+}
+
+// TestUpdatesWorkgroup test that workgroup update is handled correctly in connected shards
+func TestUpdatesWorkgroup(t *testing.T) {
+	f := newFixture(t)
+	workgroup := newWorkgroup("test-workgroup", false, "shard0", nil)
+	workgroupOnShard := newWorkgroup("test-workgroup", true, "shard0", nil)
+	workgroupUpdated := workgroup.DeepCopy()
+	workgroupUpdated.Spec.Tolerations = []corev1.Toleration{
+		{
+			Key:      "key",
+			Operator: corev1.TolerationOpExists,
+		},
+	}
+	workgroupOnShardUpdated := workgroupOnShard.DeepCopy()
+	workgroupOnShardUpdated.Spec.Tolerations = workgroupUpdated.Spec.Tolerations
+
+	_, ctx := ktesting.NewTestContext(t)
+
+	f = f.configure(
+		&ControllerFixture{
+			templateListResults:  []*nexusv1.NexusAlgorithmTemplate{},
+			workgroupListResults: []*nexusv1.NexusAlgorithmWorkgroup{workgroupUpdated},
+
+			secretListResults:    []*corev1.Secret{},
+			configMapListResults: []*corev1.ConfigMap{},
+			existingCoreObjects:  []runtime.Object{},
+			existingNexusObjects: []runtime.Object{workgroupUpdated},
+		},
+		&NexusFixture{
+			workgroupListResults: []*nexusv1.NexusAlgorithmWorkgroup{workgroupOnShard},
+			existingNexusObjects: []runtime.Object{workgroupOnShard},
+		},
+	)
+
+	f.expectControllerUpdateWorkgroupStatusAction(expectedWorkgroup(workgroupUpdated, []metav1.Condition{
+		*nexusv1.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionFalse,
+			"Workgroup \"test-workgroup\" initializing",
+		),
+	}))
+	f.expectControllerUpdateWorkgroupStatusAction(expectedWorkgroup(workgroupUpdated, []metav1.Condition{
+		*nexusv1.NewResourceReadyCondition(
+			metav1.Now(),
+			metav1.ConditionTrue,
+			"Workgroup \"test-workgroup\" ready",
+		),
+	}))
+
+	f.expectShardWorkgroupActions(expectedShardWorkgroup(workgroupOnShardUpdated, "test-workgroup"), true)
 
 	f.run(ctx, []cache.ObjectName{}, []cache.ObjectName{getWorkgroupRef(workgroup)}, false)
 	t.Log("Controller successfully created a new NexusAlgorithmWorkgroup on the shard cluster")

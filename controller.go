@@ -722,7 +722,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 		shardWorkgroup, shardErr := shard.WorkgroupLister.NexusAlgorithmWorkgroups(objectRef.Namespace).Get(objectRef.Name)
 
 		// update this Template in case it exists and has drifted
-		if shardErr == nil && !reflect.DeepEqual(shardWorkgroup.Spec, shardWorkgroup.Spec) {
+		if shardErr == nil && !reflect.DeepEqual(workgroup.Spec, shardWorkgroup.Spec) {
 			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmWorkgroup %s, updating", shardWorkgroup.Name))
 			shardWorkgroup, shardErr = shard.UpdateWorkgroup(shardWorkgroup, workgroup.Spec, FieldManager)
 			// requeue on error
