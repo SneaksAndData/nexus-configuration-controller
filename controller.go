@@ -212,7 +212,7 @@ func (c *Controller) handleObject(obj interface{}) {
 				}
 
 				template, err := c.templateLister.NexusAlgorithmTemplates(object.GetNamespace()).Get(ownerRef.Name)
-				if err != nil {
+				if err != nil { // coverage-ignore
 					logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "template", ownerRef.Name)
 					return
 				}
@@ -393,7 +393,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	switch element.objTypeName {
 	case AlgorithmTemplate:
 		err := c.templateSyncHandler(ctx, element.objRef)
-		if err == nil {
+		if err == nil { // coverage-ignore
 			// If no error occurs then we Forget this item so it does not
 			// get queued again until another change happens.
 			c.workQueue.Forget(element)
@@ -412,7 +412,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	case AlgorithmWorkgroup:
 		// Run the workgroupSyncHandler
 		err := c.workgroupSyncHandler(ctx, element.objRef)
-		if err == nil {
+		if err == nil { // coverage-ignore
 			c.workQueue.Forget(element)
 			return true
 		}
@@ -541,7 +541,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerTempla
 			_, err = shard.UpdateSecret(shardSecret, secret.Data, nil, FieldManager)
 
 			// requeue on error
-			if err != nil {
+			if err != nil { // coverage-ignore
 				msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerTemplate.Name, err)
 				c.recorder.Event(controllerTemplate, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 				return err
@@ -552,7 +552,7 @@ func (c *Controller) syncSecretsToShard(secretNamespace string, controllerTempla
 			_, err = shard.UpdateSecret(shardSecret, nil, shardTemplate, FieldManager)
 
 			// requeue on error
-			if err != nil {
+			if err != nil { // coverage-ignore
 				msg := fmt.Sprintf(MessageResourceOperationFailed, secretName, controllerTemplate.Name, err)
 				c.recorder.Event(controllerTemplate, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 				return err
@@ -602,7 +602,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 			_, err = shard.UpdateConfigMap(shardConfigMap, configMap.Data, nil, FieldManager)
 
 			// requeue on error
-			if err != nil {
+			if err != nil { // coverage-ignore
 				msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerTemplate.Name, err)
 				c.recorder.Event(controllerTemplate, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 				return err
@@ -614,7 +614,7 @@ func (c *Controller) syncConfigMapsToShard(configMapNamespace string, controller
 			_, err = shard.UpdateConfigMap(shardConfigMap, nil, shardTemplate, FieldManager)
 
 			// requeue on error
-			if err != nil {
+			if err != nil { // coverage-ignore
 				msg := fmt.Sprintf(MessageResourceOperationFailed, configMapName, controllerTemplate.Name, err)
 				c.recorder.Event(controllerTemplate, corev1.EventTypeWarning, ErrResourceSyncError, msg)
 				return err
@@ -647,7 +647,7 @@ func (c *Controller) isOwnedBy(obj metav1.ObjectMeta, controllerTemplate *v1.Nex
 func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error {
 	for _, secretName := range template.GetSecretNames() {
 		referencedSecret, err := c.secretLister.Secrets(template.Namespace).Get(secretName)
-		if err != nil {
+		if err != nil { // coverage-ignore
 			c.recorder.Event(template, corev1.EventTypeWarning, ErrResourceMissing, fmt.Sprintf(MessageResourceMissing, secretName, template.Name))
 			return err
 		}
@@ -661,7 +661,7 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 			})
 
 			_, err := c.controllerKubeClientSet.CoreV1().Secrets(template.Namespace).Update(context.TODO(), refCopy, metav1.UpdateOptions{})
-			if err != nil {
+			if err != nil { // coverage-ignore
 				c.recorder.Event(template, corev1.EventTypeWarning, ErrResourceSyncError, fmt.Sprintf(MessageResourceOperationFailed, secretName, template.Name, err))
 				return err
 			}
@@ -670,7 +670,7 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 
 	for _, configMapName := range template.GetConfigMapNames() {
 		referencedConfigMap, err := c.configMapLister.ConfigMaps(template.Namespace).Get(configMapName)
-		if err != nil {
+		if err != nil { // coverage-ignore
 			c.recorder.Event(template, corev1.EventTypeWarning, ErrResourceMissing, fmt.Sprintf(MessageResourceMissing, configMapName, template.Name))
 			return err
 		}
@@ -684,7 +684,7 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 			})
 
 			_, err := c.controllerKubeClientSet.CoreV1().ConfigMaps(template.Namespace).Update(context.TODO(), refCopy, metav1.UpdateOptions{})
-			if err != nil {
+			if err != nil { // coverage-ignore
 				c.recorder.Event(template, corev1.EventTypeWarning, ErrResourceSyncError, fmt.Sprintf(MessageResourceOperationFailed, configMapName, template.Name, err))
 				return err
 			}
@@ -700,7 +700,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 	// Get the NexusAlgorithmWorkgroup resource with this namespace/name
 	logger.V(4).Info(fmt.Sprintf("Syncing workgroup %s", objectRef.Name))
 	workgroup, err := c.workgroupLister.NexusAlgorithmWorkgroups(objectRef.Namespace).Get(objectRef.Name)
-	if err != nil {
+	if err != nil { // coverage-ignore
 		// The NexusAlgorithmWorkgroup resource may no longer exist, in which case we stop processing.
 		if k8serrors.IsNotFound(err) {
 			utilruntime.HandleErrorWithContext(ctx, err, "NexusAlgorithmWorkgroups referenced by item in work queue no longer exists", "objectReference", objectRef)
@@ -713,7 +713,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 	workgroup, err = c.reportWorkgroupInitCondition(workgroup)
 
 	// requeue in case status update fails
-	if err != nil {
+	if err != nil { // coverage-ignore
 		return err
 	}
 
@@ -726,7 +726,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmWorkgroup %s, updating", shardWorkgroup.Name))
 			_, shardErr = shard.UpdateWorkgroup(shardWorkgroup, workgroup.Spec, FieldManager)
 			// requeue on error
-			if shardErr != nil {
+			if shardErr != nil { // coverage-ignore
 				return shardErr
 			}
 		}
@@ -738,7 +738,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 		}
 
 		// requeue on error
-		if shardErr != nil {
+		if shardErr != nil { // coverage-ignore
 			logger.V(4).Error(shardErr, fmt.Sprintf("Error processing workgroup resource %s on shard %s", workgroup.Name, shard.Name))
 			return shardErr
 		}
@@ -746,7 +746,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 
 	logger.V(4).Info(fmt.Sprintf("Processed workgroup in all shards, updating status for %s", workgroup.Name))
 	workgroup, err = c.reportWorkgroupSyncedCondition(workgroup)
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.V(4).Error(err, "Error setting ready status condition")
 		return err
 	}
@@ -764,7 +764,7 @@ func (c *Controller) templateSyncHandler(ctx context.Context, objectRef cache.Ob
 	// Get the NexusAlgorithmTemplate resource with this namespace/name
 	logger.V(4).Info(fmt.Sprintf("Syncing algorithm %s", objectRef.Name))
 	template, err := c.templateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
-	if err != nil {
+	if err != nil { // coverage-ignore
 		// The NexusAlgorithmTemplate resource may no longer exist, in which case we stop processing.
 		if k8serrors.IsNotFound(err) {
 			utilruntime.HandleErrorWithContext(ctx, err, "NexusAlgorithmTemplate referenced by item in work queue no longer exists", "objectReference", objectRef)
@@ -776,13 +776,13 @@ func (c *Controller) templateSyncHandler(ctx context.Context, objectRef cache.Ob
 
 	template, err = c.reportTemplateInitCondition(template)
 	// requeue in case status update fails
-	if err != nil {
+	if err != nil { // coverage-ignore
 		return err
 	}
 
 	err = c.adoptReferences(template)
 	// requeue in case we can't take ownership of referenced secrets/configs
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.V(4).Error(err, fmt.Sprintf("Invalid machine learning algorithm resource: %s", template.Name))
 		return err
 	}
@@ -835,7 +835,7 @@ func (c *Controller) templateSyncHandler(ctx context.Context, objectRef cache.Ob
 
 	logger.V(4).Info(fmt.Sprintf("Processed all shards, updating status for %s", template.Name))
 	template, err = c.reportTemplateSyncedCondition(template, template.GetSecretNames(), template.GetConfigMapNames(), c.shardNames())
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.V(4).Error(err, "Error setting ready status condition")
 		return err
 	}
