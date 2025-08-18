@@ -5,3 +5,4 @@ linters:
       checks:
         - all
         - '-QF1001'
+        - '-ST1000'

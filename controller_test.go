@@ -55,7 +55,7 @@ type FakeControllerInformers = FakeInformers
 
 type FakeShardInformers = FakeInformers
 
-type ApiFixture struct {
+type APIFixture struct {
 	templateListResults  []*nexusv1.NexusAlgorithmTemplate
 	workgroupListResults []*nexusv1.NexusAlgorithmWorkgroup
 	secretListResults    []*corev1.Secret
@@ -65,8 +65,8 @@ type ApiFixture struct {
 	existingNexusObjects []runtime.Object
 }
 
-type ControllerFixture = ApiFixture
-type NexusFixture = ApiFixture
+type ControllerFixture = APIFixture
+type NexusFixture = APIFixture
 
 type fixture struct {
 	t *testing.T
