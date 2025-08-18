@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	v1 "github.com/SneaksAndData/nexus-core/pkg/apis/science/v1"
-	"github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/scheme"
 	"github.com/SneaksAndData/nexus-core/pkg/shards"
 	"github.com/SneaksAndData/nexus-core/pkg/telemetry"
 	"golang.org/x/time/rate"
@@ -32,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -724,7 +724,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 		// update this Template in case it exists and has drifted
 		if shardErr == nil && !reflect.DeepEqual(workgroup.Spec, shardWorkgroup.Spec) {
 			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmWorkgroup %s, updating", shardWorkgroup.Name))
-			shardWorkgroup, shardErr = shard.UpdateWorkgroup(shardWorkgroup, workgroup.Spec, FieldManager)
+			_, shardErr = shard.UpdateWorkgroup(shardWorkgroup, workgroup.Spec, FieldManager)
 			// requeue on error
 			if shardErr != nil {
 				return shardErr
@@ -734,7 +734,7 @@ func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.O
 		// if NexusAlgorithmTemplate has not been created yet, create a new one in this shard
 		if k8serrors.IsNotFound(shardErr) {
 			logger.V(4).Info(fmt.Sprintf("Workgroup %s not found in shard %s, creating", objectRef.Name, shard.Name))
-			shardWorkgroup, shardErr = shard.CreateWorkgroup(workgroup.Name, workgroup.Namespace, workgroup.Spec, FieldManager)
+			_, shardErr = shard.CreateWorkgroup(workgroup.Name, workgroup.Namespace, workgroup.Spec, FieldManager)
 		}
 
 		// requeue on error

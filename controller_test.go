@@ -703,16 +703,6 @@ func (f *fixture) expectShardWorkgroupActions(shardWorkgroup *nexusv1.NexusAlgor
 	}
 }
 
-// expectControllerWorkgroupActions sets expectations for the workgroup actions in a controller cluster
-// for workgroup in the controller cluster we expect the following: Workgroup is created or updated
-func (f *fixture) expectControllerWorkgroupActions(workgroup *nexusv1.NexusAlgorithmWorkgroup, updated bool) {
-	if !updated {
-		f.shardNexusActions = append(f.controllerNexusActions, core.NewCreateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, workgroup.Namespace, workgroup))
-	} else {
-		f.shardNexusActions = append(f.controllerNexusActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "NexusAlgorithmWorkgroups"}, workgroup.Namespace, workgroup))
-	}
-}
-
 func (f *fixture) expectOwnershipUpdateActions(templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap) {
 	if templateSecret != nil {
 		f.shardKubeActions = append(f.shardKubeActions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "secrets", Version: "v1"}, templateSecret.Namespace, templateSecret))
