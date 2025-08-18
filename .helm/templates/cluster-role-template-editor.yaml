@@ -30,4 +30,8 @@ rules:
       - nexusalgorithmtemplates/status
       - nexusalgorithmtemplate
       - nexusalgorithmtemplates/status
+      - nexusalgorithmworkgroups
+      - nexusalgorithmworkgroups/status
+      - nexusalgorithmworkgroup
+      - nexusalgorithmworkgroup/status
 {{- end }}

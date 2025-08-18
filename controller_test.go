@@ -27,7 +27,7 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	ktesting "k8s.io/klog/v2/ktesting"
+	"k8s.io/klog/v2/ktesting"
 	"reflect"
 	"testing"
 	"time"
@@ -399,6 +399,8 @@ func filterInformerActions(actions []core.Action) []core.Action {
 		if len(action.GetNamespace()) == 0 &&
 			(action.Matches("list", "NexusAlgorithmTemplates") ||
 				action.Matches("watch", "NexusAlgorithmTemplates") ||
+				action.Matches("list", "NexusAlgorithmWorkgroups") ||
+				action.Matches("watch", "NexusAlgorithmWorkgroups") ||
 				action.Matches("list", "configmaps") ||
 				action.Matches("watch", "configmaps") ||
 				action.Matches("list", "secrets") ||
@@ -431,6 +433,7 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 		f.shardKubeClient,
 		f.shardNexusClient,
 		shardNexusInf.Science().V1().NexusAlgorithmTemplates(),
+		shardNexusInf.Science().V1().NexusAlgorithmWorkgroups(),
 		shardKubeInf.Core().V1().Secrets(),
 		shardKubeInf.Core().V1().ConfigMaps())
 
@@ -630,8 +633,8 @@ func provisionControllerResources() (*corev1.Secret, *corev1.ConfigMap, *nexusv1
 }
 
 func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateConfigMap *corev1.ConfigMap, template *nexusv1.NexusAlgorithmTemplate) (*corev1.Secret, *corev1.ConfigMap) {
-	ownedtemplateSecret := templateSecret.DeepCopy()
-	ownedtemplateSecret.OwnerReferences = []metav1.OwnerReference{
+	ownedTemplateSecret := templateSecret.DeepCopy()
+	ownedTemplateSecret.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
@@ -639,8 +642,8 @@ func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateCo
 			UID:        template.UID,
 		},
 	}
-	ownedtemplateConfigMap := templateConfigMap.DeepCopy()
-	ownedtemplateConfigMap.OwnerReferences = []metav1.OwnerReference{
+	ownedTemplateConfigMap := templateConfigMap.DeepCopy()
+	ownedTemplateConfigMap.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: nexusv1.SchemeGroupVersion.String(),
 			Kind:       "NexusAlgorithmTemplate",
@@ -649,7 +652,7 @@ func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateCo
 		},
 	}
 
-	return ownedtemplateSecret, ownedtemplateConfigMap
+	return ownedTemplateSecret, ownedTemplateConfigMap
 }
 
 // TestCreatesTemplate test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
@@ -702,7 +705,7 @@ func TestCreatesTemplate(t *testing.T) {
 func TestDetectsRogue(t *testing.T) {
 	f := newFixture(t)
 	templateSecret, templateConfigMap, template := provisionControllerResources()
-	ownedtemplateSecret, ownedtemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
+	ownedTemplateSecret, ownedTemplateConfigMap := provisionOwnedControllerResources(templateSecret, templateConfigMap, template)
 
 	_, ctx := ktesting.NewTestContext(t)
 
@@ -733,7 +736,7 @@ func TestDetectsRogue(t *testing.T) {
 		nil,
 		false)
 
-	f.expectedControllerUpdateActions(template, ownedtemplateSecret, ownedtemplateConfigMap, false)
+	f.expectedControllerUpdateActions(template, ownedTemplateSecret, ownedTemplateConfigMap, false)
 
 	f.run(ctx, []cache.ObjectName{getRef(template)}, true)
 	t.Log("Controller successfully detected a rogue resource on the shard cluster")

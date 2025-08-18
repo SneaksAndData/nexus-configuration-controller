@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/datadog-go/v5/statsd"
 	v1 "github.com/SneaksAndData/nexus-core/pkg/apis/science/v1"
 	"github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/scheme"
 	"github.com/SneaksAndData/nexus-core/pkg/shards"
@@ -326,7 +325,7 @@ func (c *Controller) runWorker(ctx context.Context) {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
 	objRef, shutdown := c.workQueue.Get()
-	metrics := ctx.Value(telemetry.MetricsClientContextKey).(*statsd.Client)
+	metrics := telemetry.GetClient(ctx)
 	itemProcessStart := time.Now()
 
 	if shutdown {
