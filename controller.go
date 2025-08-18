@@ -74,13 +74,25 @@ const (
 	MessageResourceExists = "Resource %q already exists and is not managed by any Machine Learning Algorithm"
 	// MessageResourceSynced is the message used for an Event fired when a NexusAlgorithmTemplate
 	// is synced successfully
-	MessageResourceSynced = "Machine Learning Algorithm synced successfully"
+	MessageResourceSynced = "Resource of type %s synced successfully"
 	// MessageResourceMissing is the message used for an Event fired when a NexusAlgorithmTemplate references a missing Secret or a ConfigMap
 	MessageResourceMissing = "Resource %q referenced by NexusAlgorithmTemplate %q is missing in the controller cluster"
 	// MessageResourceOperationFailed is the message used for an Event fired in case of fatal exceptions occurring during Secret/Configmap sync
 	MessageResourceOperationFailed = "Synchronization/update of a resource %q referenced by NexusAlgorithmTemplate %q failed with a fatal error %s"
 	// FieldManager distinguishes this controller from other things writing to API objects
 	FieldManager = controllerAgentName
+)
+
+type SupportedObjectType = string
+
+type Element struct {
+	objRef      cache.ObjectName
+	objTypeName string
+}
+
+const (
+	AlgorithmTemplate  = SupportedObjectType("template")
+	AlgorithmWorkgroup = SupportedObjectType("workgroup")
 )
 
 // Controller is the controller implementation for NexusAlgorithmTemplate resources
@@ -104,12 +116,16 @@ type Controller struct {
 	templateLister nexuslisters.NexusAlgorithmTemplateLister
 	templateSynced cache.InformerSynced
 
+	// workgroupLister is a NexusAlgorithmWorkgroup lister in the cluster where controller is deployed
+	workgroupLister nexuslisters.NexusAlgorithmWorkgroupLister
+	workgroupSynced cache.InformerSynced
+
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
 	// means we can ensure we only process a fixed amount of resources at a
 	// time, and makes it easy to ensure we are never processing the same item
 	// simultaneously in two different workers.
-	workQueue workqueue.TypedRateLimitingInterface[cache.ObjectName]
+	workQueue workqueue.TypedRateLimitingInterface[Element]
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
@@ -119,12 +135,25 @@ type Controller struct {
 // string which is then put onto the work queue.
 func (c *Controller) enqueueResource(obj interface{}) {
 	switch ot := obj.(type) {
-	case *v1.NexusAlgorithmTemplate, *v1.NexusAlgorithmWorkgroup:
+	case *v1.NexusAlgorithmTemplate:
 		if objectRef, err := cache.ObjectToName(obj); err != nil {
 			utilruntime.HandleError(err)
 			return
 		} else {
-			c.workQueue.Add(objectRef)
+			c.workQueue.Add(Element{
+				objRef:      objectRef,
+				objTypeName: AlgorithmTemplate,
+			})
+		}
+	case *v1.NexusAlgorithmWorkgroup:
+		if objectRef, err := cache.ObjectToName(obj); err != nil {
+			utilruntime.HandleError(err)
+			return
+		} else {
+			c.workQueue.Add(Element{
+				objRef:      objectRef,
+				objTypeName: AlgorithmWorkgroup,
+			})
 		}
 	default:
 		utilruntime.HandleError(fmt.Errorf("unsupported type passed into work queue: %s", ot))
@@ -206,6 +235,7 @@ func NewController(
 	controllerSecretInformer coreinformers.SecretInformer,
 	controllerConfigmapInformer coreinformers.ConfigMapInformer,
 	controllerTemplateInformer nexusinformers.NexusAlgorithmTemplateInformer,
+	controllerWorkgroupInformer nexusinformers.NexusAlgorithmWorkgroupInformer,
 
 	failureRateBaseDelay time.Duration,
 	failureRateMaxDelay time.Duration,
@@ -224,9 +254,9 @@ func NewController(
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: controllerKubeClientSet.CoreV1().Events(controllerNamespace)})
 
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
-	ratelimiter := workqueue.NewTypedMaxOfRateLimiter(
-		workqueue.NewTypedItemExponentialFailureRateLimiter[cache.ObjectName](failureRateBaseDelay, failureRateMaxDelay),
-		&workqueue.TypedBucketRateLimiter[cache.ObjectName]{Limiter: rate.NewLimiter(rate.Limit(rateLimitElementsPerSecond), rateLimitElementsBurst)},
+	rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
+		workqueue.NewTypedItemExponentialFailureRateLimiter[Element](failureRateBaseDelay, failureRateMaxDelay),
+		&workqueue.TypedBucketRateLimiter[Element]{Limiter: rate.NewLimiter(rate.Limit(rateLimitElementsPerSecond), rateLimitElementsBurst)},
 	)
 
 	controller := &Controller{
@@ -243,13 +273,30 @@ func NewController(
 
 		templateLister: controllerTemplateInformer.Lister(),
 		templateSynced: controllerTemplateInformer.Informer().HasSynced,
-		workQueue:      workqueue.NewTypedRateLimitingQueue(ratelimiter),
-		recorder:       recorder,
+
+		workgroupLister: controllerWorkgroupInformer.Lister(),
+		workgroupSynced: controllerWorkgroupInformer.Informer().HasSynced,
+
+		workQueue: workqueue.NewTypedRateLimitingQueue(rateLimiter),
+		recorder:  recorder,
 	}
 
 	logger.Info("Setting up event handlers")
-	// Set up an event handler for when Machine Learning Algorithm resources change
+	// Set up an event handler for when Template resources change
 	_, handlerErr := controllerTemplateInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueResource,
+		UpdateFunc: func(old, new interface{}) {
+			controller.enqueueResource(new)
+		},
+		DeleteFunc: controller.handleObject,
+	})
+
+	if handlerErr != nil {
+		return nil, handlerErr
+	}
+
+	// Set up an event handler for when Workgroup resources change
+	_, handlerErr = controllerWorkgroupInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueResource,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueResource(new)
@@ -322,9 +369,9 @@ func (c *Controller) runWorker(ctx context.Context) {
 }
 
 // processNextWorkItem will read a single work item from the workqueue and
-// attempt to process it, by calling the syncHandler.
+// attempt to process it, by calling the templateSyncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage-ignore
-	objRef, shutdown := c.workQueue.Get()
+	element, shutdown := c.workQueue.Get()
 	metrics := telemetry.GetClient(ctx)
 	itemProcessStart := time.Now()
 
@@ -338,28 +385,43 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool { // coverage
 	// not call Forget if a transient error occurs, instead the item is
 	// put back on the workqueue and attempted again after a back-off
 	// period.
-	defer c.workQueue.Done(objRef)
+	defer c.workQueue.Done(element)
 	defer telemetry.GaugeDuration(metrics, ReconcileLatencyMetric, itemProcessStart, map[string]string{}, 1)
 	defer telemetry.Gauge(metrics, WorkqueueLengthMetric, float64(c.workQueue.Len()), map[string]string{}, 1)
 
-	// Run the syncHandler, passing it the structured reference to the object to be synced.
-	err := c.syncHandler(ctx, objRef)
-	if err == nil {
-		// If no error occurs then we Forget this item so it does not
-		// get queued again until another change happens.
-		c.workQueue.Forget(objRef)
+	// Run the templateSyncHandler, passing it the structured reference to the object to be synced.
+	switch element.objTypeName {
+	case AlgorithmTemplate:
+		err := c.templateSyncHandler(ctx, element.objRef)
+		if err == nil {
+			// If no error occurs then we Forget this item so it does not
+			// get queued again until another change happens.
+			c.workQueue.Forget(element)
+			return true
+		}
+		// there was a failure so be sure to report it.  This method allows for
+		// pluggable error handling which can be used for things like
+		// cluster-monitoring.
+		utilruntime.HandleErrorWithContext(ctx, err, "Error syncing; re-queuing for later retry", "objectReference", element)
+		// since we failed, we should requeue the item to work on later.  This
+		// method will add a backoff to avoid hotlooping on particular items
+		// (they're probably still not going to work right away) and overall
+		// controller protection (everything I've done is broken, this controller
+		// needs to calm down or it can starve other useful work) cases.
+		c.workQueue.AddRateLimited(element)
+	case AlgorithmWorkgroup:
+		// Run the workgroupSyncHandler
+		err := c.workgroupSyncHandler(ctx, element.objRef)
+		if err == nil {
+			c.workQueue.Forget(element)
+			return true
+		}
+		utilruntime.HandleErrorWithContext(ctx, err, "Error syncing; re-queuing for later retry", "objectReference", element)
+		c.workQueue.AddRateLimited(element)
+	default:
+		c.workQueue.Forget(element)
 		return true
 	}
-	// there was a failure so be sure to report it.  This method allows for
-	// pluggable error handling which can be used for things like
-	// cluster-monitoring.
-	utilruntime.HandleErrorWithContext(ctx, err, "Error syncing; requeuing for later retry", "objectReference", objRef)
-	// since we failed, we should requeue the item to work on later.  This
-	// method will add a backoff to avoid hotlooping on particular items
-	// (they're probably still not going to work right away) and overall
-	// controller protection (everything I've done is broken, this controller
-	// needs to calm down or it can starve other useful work) cases.
-	c.workQueue.AddRateLimited(objRef)
 	return true
 }
 
@@ -372,6 +434,30 @@ func (c *Controller) reportTemplateInitCondition(template *v1.NexusAlgorithmTemp
 		return c.controllerNexusClientSet.ScienceV1().NexusAlgorithmTemplates(template.Namespace).UpdateStatus(context.TODO(), templateCopy, metav1.UpdateOptions{FieldManager: FieldManager})
 	}
 	return template, nil
+}
+
+func (c *Controller) reportWorkgroupInitCondition(workgroup *v1.NexusAlgorithmWorkgroup) (*v1.NexusAlgorithmWorkgroup, error) {
+	// NEVER modify objects from the store. It's a read-only, local cache.
+	workgroupCopy := workgroup.DeepCopy()
+	// init condition is only assigned to new resources
+	if len(workgroup.Status.Conditions) == 0 {
+		workgroupCopy.Status.Conditions = []metav1.Condition{*v1.NewResourceReadyCondition(metav1.Now(), metav1.ConditionFalse, fmt.Sprintf("Workgroup %q initializing", workgroup.Name))}
+		return c.controllerNexusClientSet.ScienceV1().NexusAlgorithmWorkgroups(workgroup.Namespace).UpdateStatus(context.TODO(), workgroupCopy, metav1.UpdateOptions{FieldManager: FieldManager})
+	}
+	return workgroup, nil
+}
+
+func (c *Controller) reportWorkgroupSyncedCondition(workgroup *v1.NexusAlgorithmWorkgroup) (*v1.NexusAlgorithmWorkgroup, error) {
+	// NEVER modify objects from the store. It's a read-only, local cache.
+	workgroupCopy := workgroup.DeepCopy()
+	newCondition := *v1.NewResourceReadyCondition(workgroupCopy.Status.Conditions[0].LastTransitionTime, metav1.ConditionTrue, fmt.Sprintf("Workgroup %q ready", workgroup.Name))
+	workgroupCopy.Status.Conditions[0] = newCondition
+	if !reflect.DeepEqual(workgroup.Status, workgroupCopy.Status) {
+		workgroupCopy.Status.Conditions[0].LastTransitionTime = metav1.Now()
+		return c.controllerNexusClientSet.ScienceV1().NexusAlgorithmWorkgroups(workgroup.Namespace).UpdateStatus(context.TODO(), workgroupCopy, metav1.UpdateOptions{FieldManager: FieldManager})
+	}
+
+	return workgroup, nil
 }
 
 func (c *Controller) reportTemplateSyncedCondition(template *v1.NexusAlgorithmTemplate, updatedSecrets []string, updatedConfigMaps []string, shards []string) (*v1.NexusAlgorithmTemplate, error) {
@@ -608,18 +694,78 @@ func (c *Controller) adoptReferences(template *v1.NexusAlgorithmTemplate) error 
 	return nil
 }
 
-// syncHandler compares the actual state with the desired, and attempts to
+func (c *Controller) workgroupSyncHandler(ctx context.Context, objectRef cache.ObjectName) error {
+	logger := klog.LoggerWithValues(klog.FromContext(ctx), "objectRef", objectRef)
+
+	// Get the NexusAlgorithmWorkgroup resource with this namespace/name
+	logger.V(4).Info(fmt.Sprintf("Syncing workgroup %s", objectRef.Name))
+	workgroup, err := c.workgroupLister.NexusAlgorithmWorkgroups(objectRef.Namespace).Get(objectRef.Name)
+	if err != nil {
+		// The NexusAlgorithmWorkgroup resource may no longer exist, in which case we stop processing.
+		if k8serrors.IsNotFound(err) {
+			utilruntime.HandleErrorWithContext(ctx, err, "NexusAlgorithmWorkgroups referenced by item in work queue no longer exists", "objectReference", objectRef)
+			return nil
+		}
+
+		return err
+	}
+
+	workgroup, err = c.reportWorkgroupInitCondition(workgroup)
+
+	// requeue in case status update fails
+	if err != nil {
+		return err
+	}
+
+	for _, shard := range c.nexusShards {
+		logger.V(4).Info(fmt.Sprintf("Syncing NexusAlgorithmWorkgroup %s to shard %s", workgroup.Name, shard.Name))
+		shardWorkgroup, shardErr := shard.WorkgroupLister.NexusAlgorithmWorkgroups(objectRef.Namespace).Get(objectRef.Name)
+
+		// update this Template in case it exists and has drifted
+		if shardErr == nil && !reflect.DeepEqual(shardWorkgroup.Spec, shardWorkgroup.Spec) {
+			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmWorkgroup %s, updating", shardWorkgroup.Name))
+			shardWorkgroup, shardErr = shard.UpdateWorkgroup(shardWorkgroup, workgroup.Spec, FieldManager)
+			// requeue on error
+			if shardErr != nil {
+				return shardErr
+			}
+		}
+
+		// if NexusAlgorithmTemplate has not been created yet, create a new one in this shard
+		if k8serrors.IsNotFound(shardErr) {
+			logger.V(4).Info(fmt.Sprintf("Workgroup %s not found in shard %s, creating", objectRef.Name, shard.Name))
+			shardWorkgroup, shardErr = shard.CreateWorkgroup(workgroup.Name, workgroup.Namespace, workgroup.Spec, FieldManager)
+		}
+
+		// requeue on error
+		if shardErr != nil {
+			logger.V(4).Error(shardErr, fmt.Sprintf("Error processing workgroup resource %s on shard %s", workgroup.Name, shard.Name))
+			return shardErr
+		}
+	}
+
+	logger.V(4).Info(fmt.Sprintf("Processed workgroup in all shards, updating status for %s", workgroup.Name))
+	workgroup, err = c.reportWorkgroupSyncedCondition(workgroup)
+	if err != nil {
+		logger.V(4).Error(err, "Error setting ready status condition")
+		return err
+	}
+
+	c.recorder.Event(workgroup, corev1.EventTypeNormal, SuccessSynced, fmt.Sprintf(MessageResourceSynced, "NexusAlgorithmWorkgroup"))
+	return nil
+}
+
+// templateSyncHandler compares the actual state with the desired, and attempts to
 // converge the two. It then updates the Status block of the NexusAlgorithmTemplate resource
 // with the current status of the resource.
-func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName) error {
+func (c *Controller) templateSyncHandler(ctx context.Context, objectRef cache.ObjectName) error {
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "objectRef", objectRef)
 
 	// Get the NexusAlgorithmTemplate resource with this namespace/name
 	logger.V(4).Info(fmt.Sprintf("Syncing algorithm %s", objectRef.Name))
 	template, err := c.templateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
 	if err != nil {
-		// The NexusAlgorithmTemplate resource may no longer exist, in which case we stop
-		// processing.
+		// The NexusAlgorithmTemplate resource may no longer exist, in which case we stop processing.
 		if k8serrors.IsNotFound(err) {
 			utilruntime.HandleErrorWithContext(ctx, err, "NexusAlgorithmTemplate referenced by item in work queue no longer exists", "objectReference", objectRef)
 			return nil
@@ -642,7 +788,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 	}
 
 	for _, shard := range c.nexusShards {
-		logger.V(4).Info(fmt.Sprintf("Syncing to shard %s", shard.Name))
+		logger.V(4).Info(fmt.Sprintf("Syncing NexusAlgorithmTemplate %s to shard %s", template.Name, shard.Name))
 		shardTemplate, shardErr := shard.TemplateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
 
 		// update this Template in case it exists and has drifted
@@ -663,7 +809,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 
 		// requeue on error
 		if shardErr != nil {
-			logger.V(4).Error(shardErr, fmt.Sprintf("Error processing algorithm resource on shard %s", shard.Name))
+			logger.V(4).Error(shardErr, fmt.Sprintf("Error processing algorithm resource %s on shard %s", template.Name, shard.Name))
 			return shardErr
 		}
 
@@ -694,7 +840,7 @@ func (c *Controller) syncHandler(ctx context.Context, objectRef cache.ObjectName
 		return err
 	}
 
-	c.recorder.Event(template, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(template, corev1.EventTypeNormal, SuccessSynced, fmt.Sprintf(MessageResourceSynced, "NexusAlgorithmTemplate"))
 	return nil
 }
 
@@ -713,12 +859,12 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 	// Wait for the caches to be synced before starting workers
 	logger.Info("Waiting for informer caches to sync")
 
-	if ok := cache.WaitForCacheSync(ctx.Done(), c.secretsSynced, c.configMapsSynced, c.templateSynced); !ok {
+	if ok := cache.WaitForCacheSync(ctx.Done(), c.secretsSynced, c.configMapsSynced, c.templateSynced, c.workgroupSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 	logger.Info("Controller informers synced")
 	for _, shard := range c.nexusShards {
-		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.TemplateSynced); !ok {
+		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.TemplateSynced, shard.WorkgroupSynced); !ok {
 			return fmt.Errorf("failed to wait for shard %s caches to sync", shard.Name)
 		}
 	}
