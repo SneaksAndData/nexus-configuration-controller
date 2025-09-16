@@ -3,7 +3,7 @@ module github.com/SneaksAndData/nexus-configuration-controller
 go 1.24.4
 
 require (
-	github.com/SneaksAndData/nexus-core v1.3.4
+	github.com/SneaksAndData/nexus-core v1.4.0
 	github.com/aws/smithy-go v1.22.4
 	golang.org/x/time v0.12.0
 	k8s.io/api v0.33.2
@@ -31,6 +31,7 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
