@@ -52,8 +52,8 @@ rbac:
       create: true
       nameOverride: ""
     
-    # Allows NCC to manage MachineLearningAlgorithm resources in the installation namespace
-    mlaEditor:
+    # Allows NCC to manage NexusAlgorithmTemplate resources in the installation namespace
+    templateEditor:
       additionalLabels: {}
       additionalAnnotations: {}
       create: true
@@ -133,6 +133,9 @@ securityContext: {}
 
 # Nexus Configuration Controller settings
 controller:
+  # Log level for the controller
+  logLevel: INFO
+  
   # kubeconfig location for the NCC. Defaults to InClusterConfig if not provided (empty string)
   # If provided, must be mounted via a volumeMount
   kubeConfigPath: ""
