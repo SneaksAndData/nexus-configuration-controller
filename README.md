@@ -1,7 +1,7 @@
 ![coverage](https://raw.githubusercontent.com/SneaksAndData/nexus-configuration-controller/badges/.badges/main/coverage.svg)
 
 # Introduction
-Nexus Configuration Controller (NCC) provides synchronization capability for multi-cluster Nexus deployments. `MachineLearningAlgorithm` resources deployed to the *controller* cluster will be automatically synced to all connected *shard* clusters along with their dependent *secrets* and *configmaps*.
+Nexus Configuration Controller (NCC) provides synchronization capability for multi-cluster Nexus deployments. `NexusAlgorithmTemplate` resources deployed to the *controller* cluster will be automatically synced to all connected *shard* clusters along with their dependent *secrets* and *configmaps*.
 
 ## Install
 Nexus Configuration Controller installs via helm:
