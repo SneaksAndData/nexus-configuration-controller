@@ -857,13 +857,16 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 	logger.Info("Starting NexusAlgorithmTemplate controller")
 
 	// Wait for the caches to be synced before starting workers
-	logger.Info("Waiting for informer caches to sync")
+	logger.Info("Waiting for controller informer caches to sync")
 
 	if ok := cache.WaitForCacheSync(ctx.Done(), c.secretsSynced, c.configMapsSynced, c.templateSynced, c.workgroupSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 	logger.Info("Controller informers synced")
+
+	logger.Info("Waiting for shard informer caches to sync")
 	for _, shard := range c.nexusShards {
+		shard.StartInformers(ctx)
 		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.TemplateSynced, shard.WorkgroupSynced); !ok {
 			return fmt.Errorf("failed to wait for shard %s caches to sync", shard.Name)
 		}
