@@ -503,6 +503,8 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 		"shard0",
 		f.shardKubeClient,
 		f.shardNexusClient,
+		shardKubeInf,
+		shardNexusInf,
 		shardNexusInf.Science().V1().NexusAlgorithmTemplates(),
 		shardNexusInf.Science().V1().NexusAlgorithmWorkgroups(),
 		shardKubeInf.Core().V1().Secrets(),
