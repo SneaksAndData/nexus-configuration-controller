@@ -870,7 +870,6 @@ func (c *Controller) Run(ctx context.Context, workers int) error { // coverage-i
 
 	logger.Info("Waiting for shard informer caches to sync")
 	for _, shard := range c.nexusShards {
-		shard.StartInformers(ctx)
 		if ok := cache.WaitForCacheSync(ctx.Done(), shard.SecretsSynced, shard.ConfigMapsSynced, shard.TemplateSynced, shard.WorkgroupSynced); !ok {
 			return fmt.Errorf("failed to wait for shard %s caches to sync", shard.Name)
 		}
