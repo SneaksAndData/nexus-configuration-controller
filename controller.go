@@ -791,6 +791,10 @@ func (c *Controller) templateSyncHandler(ctx context.Context, objectRef cache.Ob
 		logger.V(4).Info(fmt.Sprintf("Syncing NexusAlgorithmTemplate %s to shard %s", template.Name, shard.Name))
 		shardTemplate, shardErr := shard.TemplateLister.NexusAlgorithmTemplates(objectRef.Namespace).Get(objectRef.Name)
 
+		if shardErr != nil {
+			logger.V(0).Error(shardErr, "Error getting NexusAlgorithmTemplate %s/%s", objectRef.Namespace, objectRef.Name)
+		}
+
 		// update this Template in case it exists and has drifted
 		if shardErr == nil && !reflect.DeepEqual(shardTemplate.Spec, template.Spec) {
 			logger.V(4).Info(fmt.Sprintf("Content changed for NexusAlgorithmTemplate %s, updating", template.Name))
