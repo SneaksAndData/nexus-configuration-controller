@@ -63,8 +63,6 @@ spec:
               value: {{ .Values.controller.namespace }}
             - name: NEXUS__LOG_LEVEL
               value: {{ .Values.controller.logLevel }}
-            - name: NEXUS__LOG_LEVEL
-              value: {{ .Values.controller.logLevel }}
             - name: NEXUS__SHARD_CONFIG_PATH
               value: {{ .Values.controller.shardsConfigPath }}
             - name: NEXUS__CONTROLLER_CONFIG_PATH
