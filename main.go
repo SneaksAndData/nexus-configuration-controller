@@ -70,16 +70,10 @@ func main() {
 	controllerKubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(controllerClient, time.Second*30, kubeinformers.WithNamespace(appConfig.ControllerNamespace))
 	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(appConfig.ControllerNamespace))
 
-	shardClients, shardLoaderError := shards.LoadClients(appConfig.ShardConfigPath, appConfig.ControllerNamespace, logger)
+	connectedShards, shardLoaderError := shards.LoadShards(ctx, appConfig.Alias, appConfig.ShardConfigPath, appConfig.ControllerNamespace, logger)
 	if shardLoaderError != nil {
 		logger.Error(shardLoaderError, "unable to initialize shard clients")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
-	connectedShards := []*shards.Shard{}
-
-	// only load kubeconfig files in the provided location
-	for _, shardClient := range shardClients {
-		connectedShards = append(connectedShards, shardClient.ToShard(appConfig.Alias, ctx))
 	}
 
 	controller, controllerCreationErr := NewController(
