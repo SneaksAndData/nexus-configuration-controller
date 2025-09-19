@@ -1289,8 +1289,8 @@ func Test_ControllerMain(t *testing.T) {
 	_, shardNexusClient := getClients(t, path.Join(os.Getenv("NEXUS__SHARD_CONFIG_PATH"), "kind-nexus-shard-0.kubeconfig"))
 
 	obj := newTemplate("test", nil, nil, false, nil)
-	obj.ObjectMeta.UID = ""
-	obj.ObjectMeta.Namespace = "nexus"
+	obj.UID = ""
+	obj.Namespace = "nexus"
 
 	_, err := controllerNexusClient.ScienceV1().NexusAlgorithmTemplates("nexus").Create(t.Context(), obj, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
