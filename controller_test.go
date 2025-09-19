@@ -506,8 +506,7 @@ func (f *fixture) newController(ctx context.Context) (*Controller, *FakeControll
 		shardNexusInf.Science().V1().NexusAlgorithmTemplates(),
 		shardNexusInf.Science().V1().NexusAlgorithmWorkgroups(),
 		shardKubeInf.Core().V1().Secrets(),
-		shardKubeInf.Core().V1().ConfigMaps(),
-		ctx)
+		shardKubeInf.Core().V1().ConfigMaps())
 
 	newShard.TemplateSynced = alwaysReady
 	newShard.WorkgroupSynced = alwaysReady
