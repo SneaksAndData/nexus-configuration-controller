@@ -63,9 +63,8 @@ jobs:
           
           mkdir ./crd
           
-          cd ./crd && helm pull oci://ghcr.io/sneaksanddata/helm/nexus-crd --version v1.0.0 --untar=true
-          helm install --kube-context kind-nexus-controller --namespace nexus --create-namespace nexus-crd .
-          helm install --kube-context kind-nexus-shard-0 --namespace nexus --create-namespace nexus-crd .
+          helm install --kube-context kind-nexus-controller --namespace nexus --create-namespace nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
+          helm install --kube-context kind-nexus-shard-0 --namespace nexus --create-namespace nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
           
       - name: Test
         env:
