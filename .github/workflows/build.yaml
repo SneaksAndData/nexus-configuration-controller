@@ -61,10 +61,8 @@ jobs:
           chmod 777 ./test-resources/kubecfg/controller
           chmod 777 ./test-resources/kubecfg/shards/kind-nexus-shard-0.kubeconfig
           
-          mkdir ./crd
-          
-          helm install --kube-context kind-nexus-controller --namespace nexus --create-namespace nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
-          helm install --kube-context kind-nexus-shard-0 --namespace nexus --create-namespace nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
+          helm install --kube-context kind-nexus-controller --namespace nexus --create-namespace --version v1.0.0 nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
+          helm install --kube-context kind-nexus-shard-0 --namespace nexus --create-namespace --version v1.0.0 nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
           
       - name: Test
         env:
