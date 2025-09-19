@@ -52,14 +52,20 @@ jobs:
         with:
           cluster_name: 'nexus-shard-0'
 
-      - name: Export kubeconfigs
+      - name: Export kubeconfigs and install CRD
         run: |
           mkdir -p ./test-resources/kubecfg/shards
           kind export kubeconfig --name nexus-controller --kubeconfig ./test-resources/kubecfg/controller
           kind export kubeconfig --name nexus-shard-0 --kubeconfig ./test-resources/kubecfg/shards/kind-nexus-shard-0.kubeconfig
 
           chmod 777 ./test-resources/kubecfg/controller
-          chmod 777 ./test-resources/kubecfg/shards/kind-nexus-shard-0.kubeconfig          
+          chmod 777 ./test-resources/kubecfg/shards/kind-nexus-shard-0.kubeconfig
+          
+          mkdir ./crd
+          
+          cd ./crd && helm pull oci://ghcr.io/sneaksanddata/helm/nexus-crd --version v1.0.0 --untar=true
+          helm install --kube-context kind-nexus-controller --namespace nexus --create-namespace .
+          helm install --kube-context kind-nexus-shard-0 --namespace nexus --create-namespace .
           
       - name: Test
         env:
