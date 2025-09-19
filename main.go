@@ -45,24 +45,24 @@ func main() {
 	klog.SetSlogLogger(appLogger)
 	logger := klog.FromContext(ctx)
 
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.Error(err, "One of the logging handlers cannot be configured")
 	}
 
 	controllerCfg, err := clientcmd.BuildConfigFromFlags("", appConfig.ControllerConfigPath)
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.Error(err, "Error building in-cluster kubeconfig for the controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	controllerClient, err := kubernetes.NewForConfig(controllerCfg)
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.Error(err, "Error building in-cluster kubernetes clientset for the controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	controllerNexusClient, err := clientset.NewForConfig(controllerCfg)
-	if err != nil {
+	if err != nil { // coverage-ignore
 		logger.Error(err, "Error building in-cluster nexus clientset")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
@@ -71,7 +71,7 @@ func main() {
 	controllerNexusInformerFactory := informers.NewSharedInformerFactoryWithOptions(controllerNexusClient, time.Second*30, informers.WithNamespace(appConfig.ControllerNamespace))
 
 	connectedShards, shardLoaderError := shards.LoadShards(ctx, appConfig.Alias, appConfig.ShardConfigPath, appConfig.ControllerNamespace, logger)
-	if shardLoaderError != nil {
+	if shardLoaderError != nil { // coverage-ignore
 		logger.Error(shardLoaderError, "unable to initialize shard clients")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
@@ -97,12 +97,12 @@ func main() {
 	controllerKubeInformerFactory.Start(ctx.Done())
 	controllerNexusInformerFactory.Start(ctx.Done())
 
-	if controllerCreationErr != nil {
+	if controllerCreationErr != nil { // coverage-ignore
 		logger.Error(controllerCreationErr, "Error creating a controller instance")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	if err = controller.Run(ctx, appConfig.Workers); err != nil {
+	if err = controller.Run(ctx, appConfig.Workers); err != nil { // coverage-ignore
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
