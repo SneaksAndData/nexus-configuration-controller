@@ -76,6 +76,7 @@ jobs:
           NEXUS__LOG_LEVEL: DEBUG
           NEXUS__SHARD_CONFIG_PATH: ./test-resources/kubecfg/shards
           NEXUS__CONTROLLER_CONFIG_PATH: ./test-resources/kubecfg/controller
+          APPLICATION_ENVIRONMENT: local
         run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
         
       - name: Visualise Coverage
