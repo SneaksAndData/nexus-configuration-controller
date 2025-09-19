@@ -18,16 +18,22 @@ package main
 
 import (
 	"context"
+	clientset "github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned"
 	"github.com/SneaksAndData/nexus-core/pkg/generated/clientset/versioned/fake"
 	sharding "github.com/SneaksAndData/nexus-core/pkg/shards"
 	"github.com/aws/smithy-go/ptr"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubeinformers "k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2/ktesting"
+	"os"
+	"path"
 	"reflect"
 	"testing"
 	"time"
@@ -768,6 +774,28 @@ func provisionOwnedControllerResources(templateSecret *corev1.Secret, templateCo
 	return ownedTemplateSecret, ownedTemplateConfigMap
 }
 
+func getClients(t *testing.T, kubeConfigPath string) (kubernetes.Interface, clientset.Interface) {
+	kubeCfg, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(kubeCfg)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	nexusClient, err := clientset.NewForConfig(kubeCfg)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	return kubeClient, nexusClient
+}
+
 // TestCreatesTemplate test that resource creation results in a correct status update event for the main resource and correct resource creations in the shard cluster
 func TestCreatesTemplate(t *testing.T) {
 	f := newFixture(t)
@@ -1254,4 +1282,55 @@ func TestUpdatesWorkgroup(t *testing.T) {
 
 	f.run(ctx, []cache.ObjectName{}, []cache.ObjectName{getWorkgroupRef(workgroup)}, false)
 	t.Log("Controller successfully created a new NexusAlgorithmWorkgroup on the shard cluster")
+}
+
+func Test_ControllerMain(t *testing.T) {
+	_, controllerNexusClient := getClients(t, os.Getenv("NEXUS__CONTROLLER_CONFIG_PATH"))
+	_, shardNexusClient := getClients(t, path.Join(os.Getenv("NEXUS__SHARD_CONFIG_PATH"), "kind-nexus-shard-0.kubeconfig"))
+
+	obj := newTemplate("test", nil, nil, false, nil)
+	obj.UID = ""
+	obj.Namespace = "nexus"
+
+	_, err := controllerNexusClient.ScienceV1().NexusAlgorithmTemplates("nexus").Create(t.Context(), obj, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		t.Fatalf("Error creating NexusAlgorithmTemplate in a controller cluster: %v", err)
+	}
+
+	// run main
+	go main()
+
+	// allow sync
+	time.Sleep(1 * time.Second)
+
+	// check that template has been synchronized
+	_, err = shardNexusClient.ScienceV1().NexusAlgorithmTemplates("nexus").Get(t.Context(), obj.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Error getting NexusAlgorithmTemplate from a shard cluster: %v", err)
+	}
+
+	// update template
+	current, err := controllerNexusClient.ScienceV1().NexusAlgorithmTemplates("nexus").Get(t.Context(), obj.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Error getting NexusAlgorithmTemplate from a controller cluster: %v", err)
+	}
+
+	objCopy := current.DeepCopy()
+	objCopy.Spec.Container.VersionTag = "v2.3.4"
+	_, err = controllerNexusClient.ScienceV1().NexusAlgorithmTemplates("nexus").Update(t.Context(), objCopy, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Error updating NexusAlgorithmTemplate in a controller cluster: %v", err)
+	}
+
+	time.Sleep(1 * time.Second)
+
+	// verify update propagation
+	shardObj, err := shardNexusClient.ScienceV1().NexusAlgorithmTemplates("nexus").Get(t.Context(), obj.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Error getting NexusAlgorithmTemplate from a shard cluster after an update: %v", err)
+	}
+
+	if objCopy.Spec.Container.VersionTag != shardObj.Spec.Container.VersionTag {
+		t.Fatalf("NexusAlgorithmTemplate in a controller cluster has VersionTag %s, which is different from a shard tag %s", objCopy.Spec.Container.VersionTag, shardObj.Spec.Container.VersionTag)
+	}
 }

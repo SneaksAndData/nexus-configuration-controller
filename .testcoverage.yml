@@ -13,4 +13,3 @@ exclude:
     - ^pkg/generated      # exclude generated code
     - ^pkg/signals        # exclude signal handlers from sample controller
     - hack/*.go           # exclude hack folder
-    - main.go             # exclude main file
