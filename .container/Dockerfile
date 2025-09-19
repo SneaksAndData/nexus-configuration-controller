@@ -27,7 +27,7 @@ RUN yum update -y && yum install -y unzip curl \
 
 
 # Deploy the application binary into a lean image
-FROM gcr.io/distroless/python3-debian12 AS build-release-stage
+FROM --platform=$BUILDPLATFORM gcr.io/distroless/python3-debian12 AS build-release-stage
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ COPY --from=build-stage /app /app
 COPY --from=aws-cli-stage /usr/local/aws-cli/ /usr/local/aws-cli/
 COPY --from=aws-cli-stage /aws-cli-bin/ /usr/local/bin/
 
-COPY .container/appconfig.yaml /app/appconfig.yaml 
+COPY .container/appconfig.yaml /app/appconfig.yaml
 
 USER nonroot:nonroot
 

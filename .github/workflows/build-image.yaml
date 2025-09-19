@@ -49,18 +49,18 @@ jobs:
             latest=false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.10.0
+        uses: docker/setup-buildx-action@v3.11.1
         with:
           use: true
           platforms: linux/arm64,linux/amd64
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6.15.0
+        uses: docker/build-push-action@v6.18.0
         with:
+          context: .
           build-args: |
             APPVERSION=${{ steps.version.outputs.version }}
             BUILDNUMBER=${{ steps.buildnumber.outputs.result }}
-          context: .
           file: .container/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
