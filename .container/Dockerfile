@@ -15,6 +15,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X github
 
 FROM --platform=$BUILDPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2 AS aws-cli-stage
 RUN yum update -y && yum install -y unzip curl \
+    && echo "$TARGETARCH" \
     && cli_arch=$(test "$TARGETARCH" = "amd64" && echo "x86_64" || echo "aarch64") \
     && curl "https://awscli.amazonaws.com/awscli-exe-linux-$cli_arch.zip" -o "awscliv2.zip" \
     && unzip awscliv2.zip \
@@ -27,7 +28,7 @@ RUN yum update -y && yum install -y unzip curl \
 
 
 # Deploy the application binary into a lean image
-FROM --platform=$BUILDPLATFORM gcr.io/distroless/python3-debian12 AS build-release-stage
+FROM gcr.io/distroless/python3-debian12 AS build-release-stage
 
 WORKDIR /app
 
