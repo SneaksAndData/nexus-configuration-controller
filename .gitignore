@@ -46,6 +46,3 @@ go.work.sum
 
 # env file
 *.env
-
-# test stuff
-test-resources/
