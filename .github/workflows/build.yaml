@@ -13,13 +13,13 @@ jobs:
     name: Validate code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.*'
+          go-version: '1.26.*'
           
       - name: Check Format
         run: gofmt -d ./
@@ -37,76 +37,42 @@ jobs:
         run: go build -v ./...
         
       - name: Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.1.0
+          version: v2.12.2
 
-      - name: Create Controller Kind Cluster
-        uses: helm/kind-action@main
-        with:
-          cluster_name: 'nexus-controller'
-          cloud_provider: true
+      - name: Setup just
+        uses: extractions/setup-just@v3
 
-      - name: Create Shard Kind Cluster
-        uses: helm/kind-action@main
-        with:
-          cluster_name: 'nexus-shard-0'
+      - name: Setup integration tests
+        run: just up
 
-      - name: Export kubeconfigs and install CRD
-        run: |
-          mkdir -p ./test-resources/kubecfg/shards
-          kind export kubeconfig --name nexus-controller --kubeconfig ./test-resources/kubecfg/controller
-          kind export kubeconfig --name nexus-shard-0 --kubeconfig ./test-resources/kubecfg/shards/kind-nexus-shard-0.kubeconfig
-
-          chmod 777 ./test-resources/kubecfg/controller
-          chmod 777 ./test-resources/kubecfg/shards/kind-nexus-shard-0.kubeconfig
-          
-          helm install --kube-context kind-nexus-controller --namespace nexus --create-namespace --version v1.0.0 nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
-          helm install --kube-context kind-nexus-shard-0 --namespace nexus --create-namespace --version v1.0.0 nexus-crd oci://ghcr.io/sneaksanddata/helm/nexus-crd
-          
       - name: Test
-        env:
-          NEXUS__ALIAS: kind-nexus-controller
-          NEXUS__FAILURE_RATE_BASE_DELAY: 30ms
-          NEXUS__FAILURE_RATE_MAX_DELAY: 5s
-          NEXUS__RATE_LIMIT_ELEMENTS_PER_SECOND: 50
-          NEXUS__RATE_LIMIT_ELEMENTS_BURST: 300
-          NEXUS__WORKERS: 10
-          NEXUS__CONTROLLER_NAMESPACE: nexus
-          NEXUS__LOG_LEVEL: DEBUG
-          NEXUS__SHARD_CONFIG_PATH: ./test-resources/kubecfg/shards
-          NEXUS__CONTROLLER_CONFIG_PATH: ./test-resources/kubecfg/controller
-          APPLICATION_ENVIRONMENT: local
-        run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
-        
-      - name: Visualise Coverage
-        if: ${{ github.ref != 'refs/heads/main' && always() }}
-        run: go tool cover -html=cover.out -o=cover.html
-        
-      - name: Upload Coverage
-        if: ${{ github.ref != 'refs/heads/main' && always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: cover.html
-          retention-days: 1
-        id: cover
-          
-      - name: Post Coverage
-        if: ${{ github.ref != 'refs/heads/main' && always() }}
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.number }}
-          body: |
-            New [coverage report](${{ steps.cover.outputs.artifact-url }}) available :sparkles:
+        run: just test-all
 
       - name: Check Coverage
+        id: coverage
         uses: vladopajic/go-test-coverage@v2
+        continue-on-error: true # Should fail after coverage comment is posted
         with:
           config: ./.testcoverage.yml
-
           ## badge is created and committed only for main branch
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           ## name of branch where badges are stored
           ## ideally this should be orphan branch (see below how to create this branch)
           git-branch: badges
+
+      - name: Post coverage report
+        uses: thollander/actions-comment-pull-request@v3
+        if: ${{ github.ref_name != 'main' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-tag: coverage-report
+          message: |
+            go-test-coverage report:
+            ```${{ fromJSON(steps.coverage.outputs.report) }}```
+
+      - name: Finally check coverage
+        if: steps.coverage.outcome == 'failure'
+        shell: bash
+        run: echo "coverage check failed" && exit 1
