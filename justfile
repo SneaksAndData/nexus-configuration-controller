@@ -19,7 +19,7 @@ NEXUS_SHARD_CLUSTER_NAME := "nexus-shard-0"
 fresh: stop up
 
 # Start CI environment
-up: start-controller-cluster start-shard-cluster build-image load-image create-namespace crd deploy-chart
+up: start-controller-cluster start-shard-cluster build-image load-image create-namespace create-shard-config export-controller-config crd deploy-chart
 
 start-controller-cluster:
     kind create cluster --config=test-resources/kind.yaml --name {{NEXUS_CLUSTER_NAME}}
@@ -28,14 +28,15 @@ start-shard-cluster:
 
 # Run all tests
 test-all:
-    APPLICATION_ENVIRONMENT=units go test -v ./...
+    NEXUS__ALIAS=kind-{{NEXUS_CLUSTER_NAME}} NEXUS__SHARD_CONFIG_PATH=./test-shards NEXUS__CONTROLLER_CONFIG_PATH=./test-controller/controller APPLICATION_ENVIRONMENT=local go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
 # Cleanup CI environment
 stop:
     @echo "🧹 Cleaning up..."
     kind delete cluster --name {{NEXUS_CLUSTER_NAME}}
     kind delete cluster --name {{NEXUS_SHARD_CLUSTER_NAME}}
-    rm -f cover-indexed.out cover-bare.out cover.out
+    rm -rf ./test-shards/
+    rm -rf ./test-controller/
 
 # View logs
 logs name="":
@@ -55,29 +56,35 @@ load-image:
     kind load docker-image {{NCC_IMAGE_NAME}}:{{NCC_IMAGE_TAG}} --name  {{NEXUS_SHARD_CLUSTER_NAME}}
 
 create-shard-config:
-    kind export kubeconfig --name {{NEXUS_SHARD_CLUSTER_NAME}} --kubeconfig ./test-resources/kind-{{NEXUS_SHARD_CLUSTER_NAME}}.kubeconfig
+    mkdir -p test-shards
+    kind export kubeconfig --name {{NEXUS_SHARD_CLUSTER_NAME}} --kubeconfig ./test-shards/kind-{{NEXUS_SHARD_CLUSTER_NAME}}.kubeconfig
     kubectl create secret generic ncc-shards \
         --namespace nexus \
-        --from-literal={{NEXUS_SHARD_CLUSTER_NAME}}.kubeconfig="$(cat ./test-resources/kind-{{NEXUS_SHARD_CLUSTER_NAME}}.kubeconfig)" --dry-run=client -o yaml | kubectl apply -f -
+        --context kind-{{NEXUS_CLUSTER_NAME}} \
+        --from-literal={{NEXUS_SHARD_CLUSTER_NAME}}.kubeconfig="$(cat ./test-resources/kind-{{NEXUS_SHARD_CLUSTER_NAME}}.kubeconfig)" --dry-run=client -o yaml | kubectl --context kind-{{NEXUS_CLUSTER_NAME}} apply -f -
+
+export-controller-config:
+   mkdir test-controller
+   kind export kubeconfig --name {{NEXUS_SHARD_CLUSTER_NAME}} --kubeconfig ./test-controller/controller
 
 create-namespace:
-    kubectl --context kind-{{NEXUS_CLUSTER_NAME}} create namespace nexus --dry-run=client -o yaml | kubectl apply -f -
-    kubectl --context kind-{{NEXUS_SHARD_CLUSTER_NAME}} create namespace nexus --dry-run=client -o yaml | kubectl apply -f -
+    kubectl --context kind-{{NEXUS_CLUSTER_NAME}} create namespace nexus --dry-run=client -o yaml | kubectl --context kind-{{NEXUS_CLUSTER_NAME}} apply -f -
+    kubectl --context kind-{{NEXUS_SHARD_CLUSTER_NAME}} create namespace nexus --dry-run=client -o yaml | kubectl --context kind-{{NEXUS_SHARD_CLUSTER_NAME}} apply -f -
 
 # install chart
 deploy-chart:
-    helm upgrade --kube-context kind-{{NEXUS_CLUSTER_NAME}} --install -namespace nexus {{NCC_CHART_NAME}} {{NCC_CHART_PATH}} \
+    helm upgrade --install --namespace nexus {{NCC_CHART_NAME}} {{NCC_CHART_PATH}} --kube-context=kind-{{NEXUS_CLUSTER_NAME}} \
         --set image.repository={{NCC_IMAGE_NAME}} \
         --set image.tag={{NCC_IMAGE_TAG}} \
         --set image.pullPolicy=Never \
-        --set controller.alias={{NEXUS_CLUSTER_NAME}} \
+        --set controller.alias=kind-{{NEXUS_CLUSTER_NAME}} \
         --set controller.namespace=nexus \
-        --set controller.shardsConfigSecretName=""
-
+        --set controller.shardsConfigSecretName="ncc-shards"
 
 # cleanup
 remove-chart:
-    helm uninstall -n nexus {{NCC_CHART_NAME}}
+    helm uninstall -n nexus {{NCC_CHART_NAME}} --kube-context=kind-{{NEXUS_CLUSTER_NAME}}
 
 crd:
-    helm upgrade --install --namespace nexus nexus-crd  oci://ghcr.io/sneaksanddata/helm/nexus-crd --version v1.0.0-6-ge0cf63e
+    helm upgrade --install --namespace nexus nexus-crd  oci://ghcr.io/sneaksanddata/helm/nexus-crd --version v1.0.0-6-ge0cf63e --kube-context=kind-{{NEXUS_CLUSTER_NAME}}
+    helm upgrade --install --namespace nexus nexus-crd  oci://ghcr.io/sneaksanddata/helm/nexus-crd --version v1.0.0-6-ge0cf63e --kube-context=kind-{{NEXUS_SHARD_CLUSTER_NAME}}

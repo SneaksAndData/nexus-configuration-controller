@@ -45,19 +45,7 @@ jobs:
         run: just up
 
       - name: Test
-        env:
-          NEXUS__ALIAS: kind-nexus-controller
-          NEXUS__FAILURE_RATE_BASE_DELAY: 30ms
-          NEXUS__FAILURE_RATE_MAX_DELAY: 5s
-          NEXUS__RATE_LIMIT_ELEMENTS_PER_SECOND: 50
-          NEXUS__RATE_LIMIT_ELEMENTS_BURST: 300
-          NEXUS__WORKERS: 10
-          NEXUS__CONTROLLER_NAMESPACE: nexus
-          NEXUS__LOG_LEVEL: DEBUG
-          NEXUS__SHARD_CONFIG_PATH: ./test-resources/kubecfg/shards
-          NEXUS__CONTROLLER_CONFIG_PATH: ./test-resources/kubecfg/controller
-          APPLICATION_ENVIRONMENT: local
-        run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+        run: just test-all
 
       - name: Check Coverage
         id: coverage
