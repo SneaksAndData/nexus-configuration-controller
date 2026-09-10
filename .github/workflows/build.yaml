@@ -41,6 +41,9 @@ jobs:
         with:
           version: v2.12.2
 
+      - name: Setup just
+        uses: extractions/setup-just@v3
+
       - name: Setup integration tests
         run: just up
 
