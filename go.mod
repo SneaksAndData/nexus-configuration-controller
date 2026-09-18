@@ -3,7 +3,7 @@ module github.com/SneaksAndData/nexus-configuration-controller
 go 1.26.0
 
 require (
-	github.com/SneaksAndData/nexus-core v1.4.5-0.20260909143802-1a5600268e56
+	github.com/SneaksAndData/nexus-core v1.4.5-0.20260918082008-53dbfbabf4fa
 	github.com/aws/smithy-go v1.27.2
 	golang.org/x/time v0.15.0
 	k8s.io/api v0.36.2
